@@ -1,125 +1,183 @@
-# dashboard.py (Didi's Dashboard - Day 4 Logic: Visualization)
+# dashboard.py (Didi's Visualization - Day 4 Logic)
 import streamlit as st
 import pandas as pd
-from sqlalchemy import create_engine
-# We rely on 'models.py' being in the same directory to get the Incident table definition
-from models import Incident 
-import time
+from datetime import datetime, timedelta
+import os # <-- ADDED IMPORT FOR PATH CHECKING
+# Import the Incident model and Session factory from the shared models file
+from models import Incident, Session
+from sqlalchemy.exc import OperationalError
 
-# --- Configuration (Matches models.py) ---
-DATABASE_URL = "sqlite:///database.db"
-engine = create_engine(DATABASE_URL)
-# ----------------------------------------
+# Set page configuration for a better layout
+st.set_page_config(layout="wide", page_title="Sentinel Security Dashboard")
 
-# Function to fetch all incident data from the database
-# Caching helps performance, and ttl=2 ensures it refreshes every 2 seconds
-@st.cache_data(ttl=2) 
-def fetch_incidents():
-    """Fetches all records from the incidents table using pandas for efficiency."""
-    try:
-        # Use pandas to read data directly from the SQL table
-        # We fetch the entire table to allow for in-memory filtering (Day 4 requirement)
-        df = pd.read_sql_table(Incident.__tablename__, con=engine)
-        
-        # Convert timestamp column to datetime objects
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        
-        # Sort by timestamp, newest first
-        df = df.sort_values(by='timestamp', ascending=False)
-        return df
-    except Exception as e:
-        st.error(f"Error fetching data from database: {e}")
-        return pd.DataFrame()
-
-# Streamlit App Layout
-st.set_page_config(layout="wide", page_title="Didi's Incident Dashboard", initial_sidebar_state="expanded")
-
-st.title("🛡️ Sentinel Incident Dashboard")
-st.markdown("Monitor and triage active security alerts in real-time.")
-st.markdown("---")
-
-# Main container for the dashboard content
-dashboard_container = st.container()
-
-# Start the auto-refresh loop
-with dashboard_container:
-    col1, col2 = st.columns([1, 4])
+def load_incidents(severity_filter=None, days_filter=None):
+    """
+    Connects to the database, fetches incidents, and applies filtering logic.
+    """
+    session = Session()
+    # In SQLite, session.bind.url.database returns the path/filename part
+    db_file_name = session.bind.url.database 
     
-    # --- Sidebar/Filter Column (Day 4 requirement) ---
+    try:
+        # Check if the database file exists before querying
+        if not os.path.exists(db_file_name):
+            
+            # --- CUSTOM WARNING BASED ON FILE STRUCTURE IMAGE ---
+            st.error("DATABASE FILE NOT FOUND.")
+            st.warning(f"""
+                The database file ({db_file_name}) could not be located.
+                
+                **ACTION REQUIRED:**
+                1. **Check 'models.py'**: Ensure the `DATABASE_URL` uses the correct file name: `database.db`.
+                2. **Check Path**: If you are running `dashboard.py` from the project root (`IR-System`),
+                   your `models.py` should look like this:
+                   `DATABASE_URL = "sqlite:///server_backend/database.db"` 
+                   
+                If the file still isn't found, try changing `DATABASE_URL` to an absolute path for debugging.
+            """)
+            return pd.DataFrame()
+
+        query = session.query(Incident).filter(Incident.status == 'Active')
+        
+        # Apply severity filter
+        if severity_filter and severity_filter != "All":
+            query = query.filter(Incident.severity == severity_filter)
+            
+        # Apply date filter (for incidents within the last 'days_filter' days)
+        if days_filter and days_filter > 0:
+            # Use UTC now for consistency with the database timestamp
+            cutoff_date = datetime.utcnow() - timedelta(days=days_filter)
+            query = query.filter(Incident.timestamp >= cutoff_date)
+
+        incidents = query.order_by(Incident.timestamp.desc()).all()
+        
+        # Convert list of SQLAlchemy objects to a Pandas DataFrame
+        data = [
+            {
+                "ID": inc.id,
+                "Time (UTC)": inc.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "Source IP": inc.ip,
+                "Type": inc.type,
+                "Severity": inc.severity,
+                "Rule Triggered": inc.rule,
+                "Target": inc.target,
+                "Status": inc.status
+            } for inc in incidents
+        ]
+        
+        df = pd.DataFrame(data)
+        
+        # Ensure timestamp column is correctly formatted for sorting
+        if not df.empty:
+            df['Time (UTC)'] = pd.to_datetime(df['Time (UTC)'])
+            
+        return df
+
+    except OperationalError as e:
+        # If we reached here, the file exists but there's a problem (e.g., file lock, schema mismatch)
+        st.error(f"Operational Error: Could not connect to or read the database ('{db_file_name}'). Ensure 'app.py' is not holding an exclusive lock and the database schema is correct.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"An unexpected error occurred during database query: {e}")
+        return pd.DataFrame()
+    finally:
+        session.close()
+
+# --- Main Dashboard Layout ---
+
+st.title("Sentinel Incident Response Console 🛡️")
+st.markdown("Real-time view of active security incidents across the network.")
+
+# Use st.container to group UI elements and prevent layout shifts
+with st.container():
+    col1, col2, col3 = st.columns([1, 1, 3])
+    
     with col1:
-        st.header("Filters & Metrics")
-        
-        # Fetch data first for filtering and metrics
-        incident_data = fetch_incidents()
-        
-        # Filter for Status (e.g., Active only)
-        status_options = incident_data['status'].unique().tolist() if not incident_data.empty else ["Active", "Closed"]
-        selected_status = st.multiselect(
-            "Filter by Status:",
-            options=status_options,
-            default=["Active"] # Default to showing only "Active" incidents for triage
-        )
+        # Severity Filter
+        severity_options = ["All", "Critical", "High", "Medium", "Low"]
+        selected_severity = st.selectbox("Filter by Severity", severity_options)
 
-        # Filter for Severity (Day 4 requirement)
-        severity_options = incident_data['severity'].unique().tolist() if not incident_data.empty else ["Low", "Medium", "High", "Critical"]
-        selected_severity = st.multiselect(
-            "Filter by Severity:",
-            options=severity_options,
-            default=severity_options # Show all by default
-        )
-        
-        # Apply filtering
-        if not incident_data.empty:
-            filtered_data = incident_data[
-                incident_data['status'].isin(selected_status) &
-                incident_data['severity'].isin(selected_severity)
-            ]
-        else:
-            filtered_data = incident_data
-        
-        # --- Metrics ---
-        st.subheader("Metrics")
-        st.metric("Total Incidents Logged", len(incident_data))
-        st.metric("Active Incidents (Filtered)", len(filtered_data))
-        
-        # Highlight Critical Incidents
-        critical_count = len(filtered_data[filtered_data['severity'] == 'Critical'])
-        st.metric("Critical Alerts", critical_count, delta_color="inverse")
-
-    # --- Main Dashboard Table Column (Day 4 requirement) ---
     with col2:
-        st.header(f"Incident Queue ({len(filtered_data)} Alerts)")
-        
-        if filtered_data.empty:
-            st.info("The incident queue is clear. No active alerts matching the criteria.")
-        else:
-            # Display the table with enhanced formatting
-            st.dataframe(
-                filtered_data, 
-                # FIX: Replacing deprecated 'use_container_width=True' with 'width='stretch''
-                width='stretch', 
-                # Use Streamlit's powerful column configuration for better visualization
-                column_config={
-                    # FIX: Replaced unsupported BadgeColumn with TextColumn for compatibility
-                    "severity": st.column_config.TextColumn( 
-                        "Severity",
-                        help="Risk level of the incident",
-                        width="small",
-                    ),
-                    "timestamp": st.column_config.DatetimeColumn(
-                        "Time",
-                        format="YYYY-MM-DD HH:mm:ss",
-                        width="medium"
-                    ),
-                    "ip": st.column_config.TextColumn("Source IP", width="small"),
-                    "type": st.column_config.TextColumn("Incident Type", width="medium"),
-                    "status": st.column_config.TextColumn("Status", width="small"),
-                },
-                # Select only the most relevant columns for the main view
-                column_order=["id", "timestamp", "severity", "type", "ip", "target", "rule", "status"]
-            )
+        # Date Filter (Days)
+        date_options = {
+            "All Time": 0,
+            "Last 24 Hours": 1,
+            "Last 7 Days": 7,
+            "Last 30 Days": 30
+        }
+        selected_date_label = st.selectbox("Filter by Timeframe", list(date_options.keys()))
+        selected_days = date_options[selected_date_label]
 
-# Re-run the script periodically to update the data automatically
-# This creates a near real-time effect as data is saved and fetched
-time.sleep(1) 
-st.rerun()
+    with col3:
+        # Refresh button
+        st.write("---")
+        # Added a key to ensure Streamlit tracks this button's state
+        if st.button("Refresh Data Manually", key="refresh_button", help="Click to force a database refresh."):
+            st.cache_data.clear()
+        
+# --- Data Loading and Display ---
+
+# Use Streamlit's cache_data decorator for fast reloading, with a 5-second TTL
+@st.cache_data(ttl=5)
+def get_live_data(severity, days):
+    return load_incidents(severity, days)
+
+# Fetch data using the cached function and filters
+incident_df = get_live_data(selected_severity, selected_days)
+
+# Display the main table
+st.subheader("Active Incidents")
+
+if incident_df.empty:
+    st.info("No active incidents found matching the current filters.")
+else:
+    # Highlight high severity rows for better visibility
+    st.dataframe(
+        incident_df,
+        use_container_width=True,
+        hide_index=True,
+        column_order=("ID", "Source IP", "Type", "Severity", "Time (UTC)", "Target", "Rule Triggered"),
+        column_config={
+            "Severity": st.column_config.TextColumn(
+                "Severity",
+                help="Incident impact level (Critical, High, Medium, Low)",
+                width="small"
+            ),
+            "Time (UTC)": st.column_config.DatetimeColumn(
+                "Time (UTC)",
+                format="YYYY/MM/DD hh:mm:ss"
+            )
+        }
+    )
+    
+    st.metric(label="Total Active Incidents", value=len(incident_df))
+
+# Add a section for detailed incident logs
+if not incident_df.empty and st.toggle("Show Raw Log Details"):
+    selected_incident_id = st.selectbox(
+        "Select Incident ID for Log Details",
+        incident_df['ID'].tolist()
+    )
+    
+    if selected_incident_id:
+        session = Session()
+        try:
+            raw_incident = session.query(Incident).filter(Incident.id == selected_incident_id).first()
+            if raw_incident:
+                # Display incident details as a dictionary
+                details = {
+                    "id": raw_incident.id,
+                    "ip": raw_incident.ip,
+                    "type": raw_incident.type,
+                    "severity": raw_incident.severity,
+                    "timestamp": str(raw_incident.timestamp),
+                    "rule": raw_incident.rule,
+                    "source_log": raw_incident.source_log,
+                    "target": raw_incident.target,
+                    "status": raw_incident.status,
+                }
+                st.json(details)
+            else:
+                st.warning("Details not found for this ID.")
+        finally:
+            session.close()
