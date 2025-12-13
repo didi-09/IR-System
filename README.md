@@ -175,7 +175,9 @@ Use **three terminal windows**.
 streamlit run /path/to/dashboard.py
 ```
 **Verify:**
+
 `A web browser should open automatically, displaying the Streamlit dashboard interface with incident data.`
+
 ---
 ## 6.3 Test Alert Ingestion and Notification
 ```bash
@@ -187,4 +189,6 @@ streamlit run /path/to/dashboard.py
 The API terminal (Backend) prints "NOTIFICATION SENT" for incidents with High or Critical severity.
 
 The Streamlit dashboard updates instantly to display the new incident entry.
+
+
 ---
