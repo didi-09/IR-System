@@ -34,10 +34,10 @@ class Incident(Base):
 
 # Database Initialization
 # Use absolute path to ensure consistency regardless of where the script is run from
-# The database is located in the project root (/home/kali/IR-Project/database.db)
-# models.py is in server_backend/, so we go up two levels to reach the project root
-_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-_database_path = os.path.join(_project_root, 'database.db')
+# The database is located in IR-System/ (/home/kali/IR-Project/IR-System/database.db)
+# models.py is in server_backend/, so we go up one level to reach IR-System/
+_ir_system_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+_database_path = os.path.join(_ir_system_dir, 'database.db')
 DATABASE_URL = f"sqlite:///{_database_path}"
 engine = create_engine(DATABASE_URL)
 Base.metadata.create_all(engine)
