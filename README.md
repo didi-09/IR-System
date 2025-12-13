@@ -1,190 +1,190 @@
-<<<<<<< HEAD
 # 🛡️ Security Incident Detection & Response System  
-## Project Documentation (Days 1 & 5)
+## Project Documentation (Days 1, 3, 4 & 5)
 
 ---
 
 # 📝 Day 1 – Setup & Architecture
 
 This document summarizes the work completed for **Day 1** of the 7-day project plan, focusing on establishing the system architecture and defining the core data structures.
-=======
-# 📝 Project Documentation: Day 1 - Setup & Architecture
-
-This document summarizes the work completed for **Day 1** of the 7-day project plan, focusing on establishing the architecture and defining the crucial data structure.
->>>>>>> f8a33625f4f67229b20ee867c83b0562101a2b13
 
 ---
 
 ## 📅 Day 1 Goal Achieved
 
-<<<<<<< HEAD
 **Goal:**  
 Create the environment and agree on the data format.
 
 **Result:**  
 The core infrastructure decisions were finalized, and the SQLite database foundation was established to match the agreed-upon Incident JSON structure.
-=======
-**Goal:** Create the environment and agree on the data format.  
-**Result:** The core infrastructure decisions were made, and the SQLite database foundation was set up to match the agreed-upon Incident JSON structure.
->>>>>>> f8a33625f4f67229b20ee867c83b0562101a2b13
 
 ---
 
 ## 📌 Crucial Architectural Decisions
 
-<<<<<<< HEAD
 | Decision Area | Choice | Rationale |
-|---------------|--------|-----------|
-| Work Split | **Parallel Tracks (Bayoumy & Didi)** | **Bayoumy (The Engine):** OS interaction, log parsing, detection, containment. <br> **Didi (The Brains):** Database, API, dashboard, alerts. |
-| Database | **SQLite** | Lightweight, file-based database for rapid prototyping with SQLAlchemy integration. |
+|--------------|--------|-----------|
+| Work Split | **Parallel Tracks (Bayoumy & Didi)** | **Bayoumy (Engine):** OS interaction, log parsing, detection, containment. <br> **Didi (Brains):** Database, API, dashboard, alerts. |
+| Database | **SQLite** | Lightweight, file-based DB for rapid prototyping with SQLAlchemy. |
 | OS for Agent | **Linux** | Direct access to system logs such as `/var/log/auth.log`. |
-| Dashboard / UI | **Streamlit** | Chosen over Flask/HTML for rapid visualization and dashboard iteration. |
-| API Backend | **Flask** | Lightweight REST API (`POST /api/alert`) to receive incidents from the detection engine. |
-=======
-### **Decision Area Overview**
-
-| Decision Area | Choice | Rationale |
-|---------------|--------|-----------|
-| Work Split | **Parallel Tracks (Bayoumy & Didi)** | **Bayoumy (The Engine):** OS interaction, reading logs, detection, containment. <br> **Didi (The Brains):** Database, Dashboard, Alerts. |
-| Database | **SQLite** | Simple, file-based DB for rapid prototyping and easy Python integration (SQLAlchemy). |
-| OS for Agent | **Linux** | Provides clear access to log files such as `/var/log/auth.log` for authentication events. |
-| Dashboard/UI | **Streamlit** | Replaces Flask/HTML for faster dashboard development and visualization. |
-| API Backend | **Flask** | Used to create the endpoint `POST /api/alert` for sending incident data from the agent to the server. |
->>>>>>> f8a33625f4f67229b20ee867c83b0562101a2b13
+| Dashboard / UI | **Streamlit** | Faster visualization and triage compared to Flask/HTML. |
+| API Backend | **Flask** | Lightweight REST API (`POST /api/alert`) for incident ingestion. |
 
 ---
 
 ## 📂 Incident JSON Structure (Alert Payload)
 
-<<<<<<< HEAD
-This JSON format is used by Bayoumy’s detection engine and ingested by Didi’s API.
-
-| Key | Example Value | Description | Data Type |
-|----|-------------|-------------|-----------|
-| `id` | `1` | Unique incident identifier | Integer |
-| `ip` | `"192.168.1.5"` | Source IP address | String |
-| `type` | `"Brute Force"` | Incident category | String |
-| `severity` | `"High"` | Risk level | String |
-| `timestamp` | `"2025-12-12T10:30:00"` | Time of event (ISO 8601) | String |
-| `source_log` | `"/var/log/auth.log"` | Origin log file | String |
-| `target` | `"user_john"` | Targeted user or service | String |
-| `rule` | `"Failed Login Count Exceeded"` | Triggered detection rule | String |
-=======
-This is the agreed JSON structure for alerts sent by Bayoumy’s detection agent and ingested by the Flask API.
-
-| Key | Example Value | Description | Data Type |
-|-----|---------------|-------------|-----------|
-| `id` | `1` | Unique identifier for the incident. | Integer |
-| `ip` | `"192.168.1.5"` | Source IP address that triggered the event. | String |
-| `type` | `"Brute Force"` | High-level category of the threat. | String |
-| `severity` | `"High"` | Level of risk associated with the incident. | String |
-| `timestamp` | `"2025-12-12T10:30:00"` | Time the incident occurred (ISO 8601). | String |
-| `source_log` | `"/var/log/auth.log"` | Log file where the event was detected. | String |
-| `target` | `"user_john"` | Affected user or service. | String |
-| `rule` | `"Failed Login Count Exceeded"` | Detection rule that was triggered. | String |
->>>>>>> f8a33625f4f67229b20ee867c83b0562101a2b13
+| Key | Example | Description |
+|----|--------|------------|
+| `id` | `1` | Unique incident ID |
+| `ip` | `"192.168.1.5"` | Source IP |
+| `type` | `"Brute Force"` | Incident category |
+| `severity` | `"High"` | Risk level |
+| `timestamp` | `"2025-12-12T10:30:00"` | ISO 8601 timestamp |
+| `source_log` | `"/var/log/auth.log"` | Source log file |
+| `target` | `"user_john"` | Targeted user/service |
+| `rule` | `"Failed Login Count Exceeded"` | Triggered rule |
 
 ---
 
 ## 💾 Database Schema Verification (`database.db`)
 
-<<<<<<< HEAD
-The SQLite database table `incidents` was created using **SQLAlchemy** (`models.py`) and maps directly to the JSON structure.
-
-| Column Name | SQLAlchemy Type | JSON Field | Purpose |
-|------------|----------------|------------|---------|
-| `id` | Integer (PK) | `id` | Primary key |
-| `ip` | String | `ip` | Source IP |
-| `type` | String | `type` | Incident type |
-| `severity` | String | `severity` | Severity level |
-| `timestamp` | DateTime | `timestamp` | Incident time |
-| `rule` | String | `rule` | Triggered rule |
-| `status` | String | N/A | Incident state (Active / Closed) |
-| `source_log` | String | `source_log` | Log source |
-| `target` | String | `target` | Targeted entity |
+| Column | Type | Purpose |
+|------|-----|---------|
+| `id` | Integer (PK) | Incident ID |
+| `ip` | String | Source IP |
+| `type` | String | Incident type |
+| `severity` | String | Severity level |
+| `timestamp` | DateTime | Time of incident |
+| `rule` | String | Triggered rule |
+| `status` | String | Active / Closed |
+| `source_log` | String | Log source |
+| `target` | String | Targeted entity |
 
 ---
 
 ## ✅ Day 1 Conclusion
 
-The foundational architecture for **detection, ingestion, and persistence** is fully established.
+The architectural foundation for detection, ingestion, and persistence is complete.
 
 ---
 
-# 🚨 Day 5 – Response & Notification
+# 🧠 Day 3 – Triage & Database Finalization (Critical Setup)
 
-Day 5 focused on implementing **automated response and notification mechanisms**, completing the core response requirements for both system components.
+This day focused on implementing the **intelligence layer** and finalizing the **core backend infrastructure**.
 
 ---
 
-## 1️⃣ Didi’s Backend – Alerting Implemented
+## 🔹 Team Contributions
 
-The Flask backend (`app.py`) was enhanced to support automated notifications when high-risk incidents are ingested.
+| Team Member | Task | Description |
+|------------|------|-------------|
+| Bayoumy | Rule Implementation | Implemented the first core detection rule (e.g., **3 failed logins in 60 seconds**). |
+| Bayoumy | Data Collection | Collected incident metadata (IP, timestamp, PID, target user). |
+| Didi | API Endpoint | Implemented `/api/alert` ingestion endpoint in `app.py`. |
+| Didi | DB Finalization | Finalized SQLAlchemy `Incident` model and session management. |
 
-### Changes Summary
+---
+
+## ✅ Day 3 Status
+
+- Detection logic operational  
+- API ingestion active  
+- Database persistence finalized  
+
+---
+
+# 📊 Day 4 – Visualization (Didi)
+
+The visualization layer was implemented using **Streamlit** to enable real-time incident monitoring and triage.
+
+---
+
+## Dashboard Features (`dashboard.py`)
+
+| Feature | Description |
+|-------|------------|
+| Incident Display | Fetches and displays **Active Incidents** from the database. |
+| Filtering | Allows filtering by **Severity** and **Date Range**. |
+
+---
+
+## ✅ Day 4 Status
+
+The dashboard provides a clear, interactive view of system security posture.
+
+---
+
+# 🚨 Day 5 – Alerting & Containment
+
+Day 5 focused on **automated alerting** and **containment groundwork**, completing the response phase.
+
+---
+
+## 5.1 Didi’s Backend – Alerting Implemented
+
+The Flask backend was enhanced to trigger notifications for high-risk incidents.
+
+### Changes
 
 | File | Change | Description |
 |----|------|------------|
-| `app.py` | **New Function:** `send_notification(incident_details)` | Simulates sending external alerts (Slack / Email). Currently prints a high-priority alert to the server console. |
-| `app.py` | **Integration in** `receive_alert()` | After saving an incident, the API checks severity. If severity is **High** or **Critical**, notification is triggered immediately. |
+| `app.py` | `send_notification()` | Simulates external alerts (Slack / Email) via console output. |
+| `app.py` | `receive_alert()` | Triggers notifications for **High** or **Critical** severity incidents after DB save. |
 
-### Status  
-✅ **COMPLETE**  
-The backend now ingests incidents, stores them in the database, and triggers alerts for high-severity threats.
+**Status:** ✅ COMPLETE
 
 ---
 
-## 2️⃣ Bayoumy’s Engine – Containment Functions
+## 5.2 Bayoumy’s Engine – Containment Duties
 
-The detection engine (`detection_script.py`) was extended with automated containment capabilities using Python’s `subprocess` module.
+Automated response foundations were added to the detection engine.
 
-### Changes Summary
+### Containment Actions
 
-| File | Change | Description |
-|----|------|------------|
-| `detection_script.py` | **Function:** `block_ip(ip_address)` | Executes an `iptables` command to block malicious IPs (currently simulated). |
-| `detection_script.py` | **Function:** `kill_process(pid)` | Executes `kill -9` to terminate suspicious processes (currently simulated). |
+| Task | Description |
+|----|------------|
+| Action 1 | Subprocess function to block IPs using `iptables`. |
+| Action 2 | Subprocess function to kill suspicious processes using `kill`. |
 
-### Status  
-✅ **COMPLETE**  
-Containment mechanisms are implemented and tested in simulation mode, ready for integration with detection rules.
+*(Currently implemented in simulation mode for safety.)*
 
----
-
-## 🔄 Next Step – Day 6: Integration (The “Merge”)
-
-With detection, storage, alerting, and response mechanisms ready, the next phase is full system integration:
-
-- Bayoumy will update `detection_script.py` to send incidents via **POST** to Didi’s API.
-- An end-to-end test will be executed:
-=======
-The `incidents` table was created using **SQLAlchemy** inside `models.py`.  
-Each field is mapped directly from the JSON structure.
-
-| Column Name | SQLAlchemy Type | JSON Field | Description |
-|-------------|-----------------|------------|-------------|
-| `id` | Integer (Primary Key) | `id` | Unique incident ID. |
-| `ip` | String | `ip` | Source IP of attack. |
-| `type` | String | `type` | Threat category. |
-| `severity` | String | `severity` | Incident severity level. |
-| `timestamp` | DateTime | `timestamp` | Time of incident. |
-| `rule` | String | `rule` | Triggered rule (required by plan). |
-| `status` | String | N/A | Current incident status (Active, Closed). |
-| `source_log` | String | `source_log` | Log file source. |
-| `target` | String | `target` | Targeted user or system. |
+**Status:** ✅ COMPLETE
 
 ---
 
-## ✅ Conclusion
+# ▶️ How to Run & Test (Didi’s System)
 
-Day 1 is completed successfully.  
-The foundation for **data persistence**, **alert ingestion**, and **overall architecture** has been established.
+Use **three terminal windows**.
 
 ---
 
-## ▶️ Next Step
+## 6.1 Start Backend API
 
-### **Proceed to Day 3: Triage & Storage**
-Implementing the `POST /api/alert` API endpoint in `app.py`.
->>>>>>> f8a33625f4f67229b20ee867c83b0562101a2b13
+```bash
+/bin/python /home/kali/IR-Project/IR-System/server_backend/app.py
 
+```
+**Verify:**  
+`Starting Flask API server...`
+
+---
+
+## 6.2 Start Dashboard
+
+```bash
+streamlit run /path/to/dashboard.py
+```
+**Verify:**
+`A web browser should open automatically, displaying the Streamlit dashboard interface with incident data.`
+---
+## 6.3 Test Alert Ingestion and Notification
+```bash
+/bin/python /home/kali/IR-Project/IR-System/server_backend/test_client.py
+```
+
+**Verify:**
+
+The API terminal (Backend) prints "NOTIFICATION SENT" for incidents with High or Critical severity.
+
+The Streamlit dashboard updates instantly to display the new incident entry.
+---
