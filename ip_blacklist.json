@@ -1,0 +1,10 @@
+{
+  "ips": [
+    "192.168.1.100",
+    "10.0.0.50",
+    "172.16.0.25"
+  ],
+  "description": "Local IP blacklist for threat intelligence integration",
+  "last_updated": "2025-01-01T00:00:00"
+}
+

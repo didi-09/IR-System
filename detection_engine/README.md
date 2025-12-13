@@ -30,6 +30,13 @@ Main agent that:
 - Applies containment actions
 - Sends alerts to Flask API backend
 
+### 5. `system_info.py` (Day 2 & 3)
+System information collection:
+- **Day 2**: Print current running processes using psutil
+- **Day 3**: Capture System Info (OS, Users, Uptime) when incidents detected
+- **Day 3**: Capture Active Network Connections using socket and psutil
+- Automatic system context collection for incident enrichment
+
 ## Usage
 
 ### Basic Usage (Simulation Mode - Safe)
@@ -47,6 +54,20 @@ python detection_agent.py \
     --api-url http://127.0.0.1:5000/api/alert \
     --simulation \
     --interval 5.0
+```
+
+### Day 2: Print Running Processes
+
+```bash
+# Print current running processes and exit
+python detection_agent.py --print-processes
+```
+
+### Day 2/3: Print System Information
+
+```bash
+# Print comprehensive system information summary and exit
+python detection_agent.py --print-system-info
 ```
 
 ### Production Mode (WARNING: Real Actions)
@@ -71,8 +92,32 @@ The detection agent automatically sends detected incidents to the Flask API back
 
 - Python 3.6+
 - `requests` library (for API communication)
+- `psutil` library (for system info and process monitoring - Day 2 & 3)
 - Linux system (for real iptables/kill actions)
 - Root privileges (for real containment actions)
+
+Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Day 2 & 3 Features
+
+### Day 2: Process Monitoring
+- Use `--print-processes` to view current running processes
+- Processes are sorted by CPU usage
+- Shows PID, name, status, CPU%, and Memory%
+
+### Day 3: System Context Collection
+- Automatically collects system info when incidents are detected:
+  - OS information (system, release, version)
+  - Current user and system users
+  - System uptime
+  - CPU and memory usage
+  - Active network connections
+  - Top running processes
+- System context is included in incident data sent to API
+- Use `--no-system-info` to disable collection (faster, less detailed)
 
 ## Testing
 

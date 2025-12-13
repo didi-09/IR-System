@@ -16,12 +16,14 @@ try:
     from .log_parser import AuthLogParser
     from .detection_rules import DetectionEngine
     from .containment import ContainmentActions
+    from .system_info import collect_incident_context, print_system_info_summary, get_running_processes
 except ImportError:
     # If relative imports fail, try absolute imports (for direct script execution)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from log_parser import AuthLogParser
     from detection_rules import DetectionEngine
     from containment import ContainmentActions
+    from system_info import collect_incident_context, print_system_info_summary, get_running_processes
 
 class DetectionAgent:
     """
@@ -33,7 +35,8 @@ class DetectionAgent:
         log_file: str = "/var/log/auth.log",
         api_url: str = "http://127.0.0.1:5000/api/alert",
         simulation_mode: bool = True,
-        check_interval: float = 5.0
+        check_interval: float = 5.0,
+        collect_system_info: bool = True
     ):
         """
         Initialize the detection agent.
@@ -43,12 +46,14 @@ class DetectionAgent:
             api_url: URL of the Flask API endpoint
             simulation_mode: If True, containment actions are simulated
             check_interval: Seconds between log checks
+            collect_system_info: If True, collect system info when incidents detected (Day 3)
         """
         self.log_parser = AuthLogParser(log_file)
         self.detection_engine = DetectionEngine()
         self.containment = ContainmentActions(simulation_mode=simulation_mode)
         self.api_url = api_url
         self.check_interval = check_interval
+        self.collect_system_info = collect_system_info
         self.last_position = 0
         self.running = False
         
@@ -63,6 +68,7 @@ class DetectionAgent:
         print(f"API URL: {api_url}")
         print(f"Simulation Mode: {simulation_mode}")
         print(f"Check Interval: {check_interval} seconds")
+        print(f"System Info Collection: {collect_system_info}")
         print("=" * 60)
     
     def send_alert_to_api(self, incident: Dict) -> bool:
@@ -127,6 +133,7 @@ class DetectionAgent:
     def handle_incident(self, incident: Dict):
         """
         Handle a detected incident: apply containment and send alert.
+        Day 3: Collects system info when incident is detected.
         
         Args:
             incident: Detected incident dictionary
@@ -144,6 +151,33 @@ class DetectionAgent:
             print(f"Attempt Count: {incident.get('attempt_count')}")
         print("=" * 60)
         
+        # Day 3: Collect system information when incident is detected
+        if self.collect_system_info:
+            print("\n📊 Collecting system context...")
+            try:
+                system_context = collect_incident_context()
+                incident['system_context'] = system_context
+                
+                # Print summary of system info
+                if 'system_info' in system_context:
+                    sys_info = system_context['system_info']
+                    if 'os' in sys_info:
+                        print(f"  OS: {sys_info['os']['system']} {sys_info['os']['release']}")
+                    if 'uptime' in sys_info:
+                        print(f"  Uptime: {sys_info['uptime']['uptime_formatted']}")
+                    if 'cpu' in sys_info:
+                        print(f"  CPU Usage: {sys_info['cpu']['cpu_percent']}%")
+                
+                if 'network_connections' in system_context:
+                    print(f"  Active Network Connections: {len(system_context['network_connections'])}")
+                
+                if 'top_processes' in system_context:
+                    print(f"  Top Processes Monitored: {len(system_context['top_processes'])}")
+                
+            except Exception as e:
+                print(f"  ⚠️  Warning: Could not collect system info: {e}")
+                incident['system_context'] = {'error': str(e)}
+        
         # Apply containment actions
         containment_results = self.containment.apply_containment(incident)
         
@@ -152,7 +186,7 @@ class DetectionAgent:
         if containment_results.get('process_killed'):
             print("✅ Process termination action completed")
         
-        # Send alert to API
+        # Send alert to API (with system context included)
         print("\n📤 Sending alert to API backend...")
         success = self.send_alert_to_api(incident)
         
@@ -244,15 +278,53 @@ def main():
         default=5.0,
         help='Check interval in seconds (default: 5.0)'
     )
+    parser.add_argument(
+        '--no-system-info',
+        action='store_true',
+        help='Disable system info collection (Day 3 feature)'
+    )
+    parser.add_argument(
+        '--print-processes',
+        action='store_true',
+        help='Day 2: Print current running processes and exit'
+    )
+    parser.add_argument(
+        '--print-system-info',
+        action='store_true',
+        help='Day 2/3: Print system information summary and exit'
+    )
     
     args = parser.parse_args()
+    
+    # Day 2: Print processes if requested
+    if args.print_processes:
+        print("\n" + "=" * 60)
+        print("⚙️  CURRENT RUNNING PROCESSES (Day 2)")
+        print("=" * 60)
+        processes = get_running_processes(limit=20)
+        if processes:
+            print(f"{'PID':<8} {'Name':<30} {'Status':<12} {'CPU %':<8} {'Memory %':<10}")
+            print("-" * 70)
+            for proc in processes:
+                print(f"{proc['pid']:<8} {proc['name'][:29]:<30} {proc['status']:<12} "
+                      f"{proc['cpu_percent']:<8.1f} {proc['memory_percent']:<10.1f}")
+        else:
+            print("No processes found or access denied")
+        print("=" * 60 + "\n")
+        return
+    
+    # Day 2/3: Print system info if requested
+    if args.print_system_info:
+        print_system_info_summary()
+        return
     
     # Create and start agent
     agent = DetectionAgent(
         log_file=args.log_file,
         api_url=args.api_url,
         simulation_mode=args.simulation,
-        check_interval=args.interval
+        check_interval=args.interval,
+        collect_system_info=not args.no_system_info
     )
     
     agent.start()

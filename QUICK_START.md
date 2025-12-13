@@ -140,10 +140,28 @@ IR-System/
 └── database.db                 # SQLite database
 ```
 
+## Testing the System
+
+### Quick Test
+Run the quick test script to verify all components:
+```bash
+./quick_test.sh
+```
+
+### Comprehensive Testing
+See `TESTING_GUIDE.md` for complete testing instructions covering:
+- Individual component testing
+- Integration testing
+- Dashboard features
+- API endpoints
+- Error handling
+- Performance testing
+
 ## Next Steps
 
 1. Review the main `README.md` for detailed documentation
 2. Check `detection_engine/README.md` for detection engine details
-3. Customize detection rules in `detection_rules.py`
-4. Adjust containment actions in `containment.py`
+3. Read `TESTING_GUIDE.md` for comprehensive testing instructions
+4. Customize detection rules in `detection_rules.py`
+5. Adjust containment actions in `containment.py`
 
