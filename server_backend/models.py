@@ -3,6 +3,7 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
+import os
 
 # Define the base class for declarative class definitions
 Base = declarative_base()
@@ -32,7 +33,12 @@ class Incident(Base):
         return f"<Incident(id='{self.id}', type='{self.type}', severity='{self.severity}')>"
 
 # Database Initialization
-DATABASE_URL = "sqlite:///database.db"
+# Use absolute path to ensure consistency regardless of where the script is run from
+# The database is located in the project root (/home/kali/IR-Project/database.db)
+# models.py is in server_backend/, so we go up two levels to reach the project root
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+_database_path = os.path.join(_project_root, 'database.db')
+DATABASE_URL = f"sqlite:///{_database_path}"
 engine = create_engine(DATABASE_URL)
 Base.metadata.create_all(engine)
 
