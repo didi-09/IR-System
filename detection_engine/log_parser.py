@@ -220,8 +220,8 @@ class JournalLogParser(AuthLogParser):
         """
         self.cmd = ['journalctl', '-f', '-n', '0', '--no-pager']
         # Use -t (syslog identifier) instead of -u (unit) to catch logger messages too
-        # real sshd also uses 'sshd' identifier
-        identifiers = ['sshd', 'ssh', 'sudo', 'su']
+        # Modern SSH uses 'sshd-session' identifier, older versions use 'sshd'
+        identifiers = ['sshd', 'sshd-session', 'ssh', 'sudo', 'su']
         for ident in identifiers:
             self.cmd.extend(['-t', ident])
             

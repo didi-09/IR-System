@@ -1,48 +1,62 @@
 #!/bin/bash
-# start_real_mode.sh
-# Starts the IR System in Real Data Mode (Production)
+# Start IR System in Real Detection Mode
+# This script starts all services needed for real-time incident detection
 
-# Colors
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+set -e
 
-echo -e "${GREEN}🛡️  Starting Security Incident Response System - REAL DATA MODE${NC}"
-echo "================================================================"
-echo "WARNING: This mode will execute REAL ACTIONS (iptables blocking, process killing)."
-echo "Ensure you have permission to monitor logs and execute commands."
-echo "================================================================"
+echo "🛡️  IR System - Real Detection Mode"
+echo "====================================="
+echo ""
 
-# Check for root if running agent
-if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}⚠️  Warning: You are running without sudo.${NC}"
-  echo "The Detection Agent may fail to read /var/log/auth.log or execute containment."
-  echo "It is recommended to run this script with sudo if you want full functionality."
-  read -p "Continue anyway? (y/n) " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    exit 1
-  fi
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then 
+   echo "❌ This script must be run with sudo!"
+   echo "   Usage: sudo ./start_real_mode.sh"
+   exit 1
 fi
 
-# 1. Start Backend API
-echo -e "\n${GREEN}[1/3] Starting Flask API Backend...${NC}"
-cd /home/kali/IR-Project/IR-System/server_backend
-python3 app.py > api.log 2>&1 &
-API_PID=$!
-echo "Backend running (PID: $API_PID). Logs: server_backend/api.log"
+cd /home/kali/IR-Project/IR-System
 
-# Wait for API to start
+# Clean up old processes
+echo "🧹 Stopping old processes..."
+pkill -f detection_agent.py 2>/dev/null || true
+pkill -f "python3 app.py" 2>/dev/null || true
+pkill -f streamlit 2>/dev/null || true
+sleep 2
+
+# Start Flask API (as kali user)
+echo "🚀 Starting Flask API..."
+su - kali -c "cd /home/kali/IR-Project/IR-System/server_backend && python3 app.py > /tmp/ir_api.log 2>&1 &"
 sleep 3
 
-# 2. Start Dashboard
-echo -e "\n${GREEN}[2/3] Starting Streamlit Dashboard...${NC}"
-streamlit run dashboard.py > dashboard.log 2>&1 &
-DASH_PID=$!
-echo "Dashboard running (PID: $DASH_PID). Logs: server_backend/dashboard.log"
+# Verify API started
+if curl -s http://127.0.0.1:5000/ > /dev/null 2>&1; then
+    echo "   ✅ API running on http://127.0.0.1:5000"
+else
+    echo "   ❌ API failed to start. Check /tmp/ir_api.log"
+    exit 1
+fi
 
-# 3. Start Detection Agent (Real Mode)
-echo -e "\n${GREEN}[3/3] Starting Detection Agent (REAL MODE)...${NC}"
+# Start Dashboard (as kali user)
+echo "🚀 Starting Dashboard..."
+su - kali -c "cd /home/kali/IR-Project/IR-System && streamlit run server_backend/dashboard.py --server.address 0.0.0.0 --server.port 8501 > /tmp/ir_dashboard.log 2>&1 &"
+sleep 3
+
+echo "   ✅ Dashboard running on http://0.0.0.0:8501"
+
+# Start Detection Agent (as root, in foreground)
+echo "🚀 Starting Detection Agent..."
+echo ""
+echo "📊 Detection agent will run in foreground."
+echo "   You'll see real-time detection output below."
+echo "   Press Ctrl+C to stop."
+echo ""
+echo "🧪 To test, from another device run:"
+echo "   ssh wronguser@$(hostname -I | awk '{print $1}')"
+echo "   (Do this 3 times to trigger Brute Force detection)"
+echo ""
+echo "====================================="
+echo ""
+
 cd /home/kali/IR-Project/IR-System/detection_engine
-# Explicitly use --no-simulation just to be 100% sure, though we changed the default
-python3 detection_agent.py --no-simulation
+exec python3 detection_agent.py --no-simulation

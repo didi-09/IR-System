@@ -166,26 +166,29 @@ Sentinel is a **fully automated** Security Operations Center (SOC) platform desi
 
 ```
 IR-System/
-├── 📄 Configuration Files
-│   ├── .env.example              # Environment variables template
-│   ├── .gitignore                # Git ignore rules
+├── 📄 Core Configuration
+│   ├── README.md                 # Complete documentation
 │   ├── requirements.txt          # Python dependencies
+│   ├── .env.example              # Environment variables template
 │   ├── whitelist.json            # Trusted IPs (never blocked)
-│   └── ip_blacklist.json         # Known malicious IPs
+│   ├── ip_blacklist.json         # Known malicious IPs
+│   ├── database.db               # Active SQLite database
+│   ├── threat_intel_cache.sqlite # Threat intelligence cache
+│   └── start_real_mode.sh        # ⭐ Main startup script
 │
-├── 🔍 Detection Engine
+├── 🔍 detection_engine/
 │   ├── detection_agent.py        # Main monitoring agent
-│   ├── log_parser.py             # Log parsing (journalctl + file)
+│   ├── log_parser.py             # ✅ Log parsing (sshd-session fix)
 │   ├── detection_rules.py        # 5 detection rules
 │   ├── containment.py            # Automated response actions
 │   ├── system_info.py            # System context collection
-│   ├── network_monitor.py        # Network monitoring (ping, traffic)
+│   ├── network_monitor.py        # Network monitoring
 │   └── __init__.py
 │
-├── 🖥️ Backend & Dashboard
+├── 🖥️ server_backend/
 │   ├── app.py                    # Flask API + threat intel
-│   ├── models.py                 # Database models (SQLAlchemy)
 │   ├── dashboard.py              # Streamlit dashboard
+│   ├── models.py                 # Database models (SQLAlchemy)
 │   ├── threat_intel.py           # GeoIP + AbuseIPDB integration
 │   ├── alert_manager.py          # Desktop + email notifications
 │   ├── email_notifier.py         # SMTP email sender
@@ -193,7 +196,7 @@ IR-System/
 │   ├── config_manager.py         # Configuration management
 │   └── config.json               # Runtime configuration
 │
-├── 🧪 Tests
+├── 🧪 tests/
 │   ├── test_api_direct.py        # API integration tests
 │   ├── test_backend.py           # Backend tests
 │   ├── test_detection.py         # Detection rules tests
@@ -202,20 +205,13 @@ IR-System/
 │   ├── quick_test.sh             # Quick test script
 │   └── run_all_tests.py          # Test runner
 │
-├── 🚀 Scripts
-│   ├── start_real_mode.sh        # Production startup script
-│   ├── cleanup.sh                # Project cleanup utility
-│   └── simulate_data_stream.py   # Data simulation for testing
-│
-├── 📦 Data & Logs
-│   ├── database.db               # Active SQLite database
+├── � Data & Logs
+│   ├── archive/                  # Incident backups
+│   ├── logs/                     # Runtime logs
 │   ├── reports/                  # Generated PDF reports
-│   └── archive/                  # Backups and old files
-│       ├── migrations/           # Database migration scripts
-│       └── incidents_backup_*.json # Archived incident data
+│   └── simulate_data_stream.py   # Testing/demo data generator
 │
-└── 📖 Documentation
-    └── README.md                 # This file
+└── .git/                         # Version control
 ```
 
 ---
@@ -619,6 +615,15 @@ python3 simulate_data_stream.py
 ---
 
 ## 🔧 Troubleshooting
+
+
+### "SSH attempts not being detected"
+**Modern SSH servers** (OpenSSH 9.0+) use `sshd-session` as the syslog identifier.
+
+The log parser monitors both `sshd` and `sshd-session`. Verify:
+```bash
+journalctl -t sshd-session -n 10 --no-pager
+```
 
 ### "Log file not found"
 - System uses journalctl as fallback

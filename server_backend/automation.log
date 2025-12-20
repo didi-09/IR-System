@@ -1,2 +1,0 @@
-[2025-12-20 13:11:19] SUCCESS - BLOCK_IP | Target: 1.2.3.4 | Severity: Critical | Reason: Rapid Login Attempts
-[2025-12-20 13:11:19] SUCCESS - BLOCK_IP | Target: 9.10.11.12 | Severity: High | Reason: Multiple Sudo Failures
