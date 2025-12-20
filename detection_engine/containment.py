@@ -2,25 +2,78 @@
 """
 Containment module for automated response actions.
 Implements IP blocking (iptables) and process termination (kill).
-Currently runs in simulation mode for safety.
+Supports configuration-based automation policies.
 """
 import subprocess
 import os
 import sys
+import json
 from typing import Optional, Dict
+from datetime import datetime
 
 class ContainmentActions:
     """Handles automated containment actions for security incidents."""
     
-    def __init__(self, simulation_mode: bool = True):
+    def __init__(self, simulation_mode: bool = True, config_path: str = None):
         """
         Initialize containment actions.
         
         Args:
             simulation_mode: If True, only simulate actions (safe for testing)
+            config_path: Path to config.json (optional)
         """
         self.simulation_mode = simulation_mode
         self.blocked_ips = set()  # Track blocked IPs to avoid duplicates
+        self.automation_stats = {
+            'ips_blocked': 0,
+            'processes_killed': 0,
+            'actions_logged': 0
+        }
+        
+        # Load automation policies from config
+        self.automation_policies = self._load_automation_policies(config_path)
+        self.automation_enabled = self.automation_policies.get('enabled', True)
+        
+        # Setup logging
+        self.log_file = os.path.join(os.path.dirname(__file__), '..', 'server_backend', 'automation.log')
+    
+    def _load_automation_policies(self, config_path: str = None) -> Dict:
+        """Load automation policies from config file."""
+        if config_path is None:
+            config_path = os.path.join(os.path.dirname(__file__), '..', 'server_backend', 'config.json')
+        
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    return config.get('automation_policies', {'enabled': True, 'actions': {}})
+        except Exception as e:
+            print(f"Warning: Could not load automation policies: {e}")
+        
+        # Return default policies if loading fails
+        return {
+            'enabled': True,
+            'actions': {
+                'Critical': {'block_ip': True, 'kill_process': False, 'send_email': True},
+                'High': {'block_ip': True, 'kill_process': False, 'send_email': True},
+                'Medium': {'block_ip': False, 'kill_process': False, 'send_email': False},
+                'Low': {'block_ip': False, 'kill_process': False, 'send_email': False}
+            }
+        }
+    
+    def _log_action(self, action_type: str, target: str, severity: str, success: bool, reason: str = ""):
+        """Log automated action to file."""
+        try:
+            timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            status = 'SUCCESS' if success else 'FAILED'
+            log_entry = f"[{timestamp}] {status} - {action_type} | Target: {target} | Severity: {severity} | Reason: {reason}\n"
+            
+            with open(self.log_file, 'a') as f:
+                f.write(log_entry)
+            
+            self.automation_stats['actions_logged'] += 1
+        except Exception as e:
+            print(f"Warning: Could not log action: {e}")
     
     def block_ip(self, ip_address: str, reason: str = "Security Incident") -> bool:
         """
@@ -158,7 +211,7 @@ class ContainmentActions:
     
     def apply_containment(self, incident: Dict) -> Dict[str, bool]:
         """
-        Apply appropriate containment actions based on incident severity.
+        Apply appropriate containment actions based on incident severity and automation policies.
         
         Args:
             incident: Incident dictionary with severity, ip, pid, etc.
@@ -168,30 +221,57 @@ class ContainmentActions:
         """
         results = {
             'ip_blocked': False,
-            'process_killed': False
+            'process_killed': False,
+            'automation_enabled': self.automation_enabled
         }
+        
+        # Check if automation is globally enabled
+        if not self.automation_enabled:
+            print("ℹ️  Automation is disabled. No containment actions will be taken.")
+            return results
         
         severity = incident.get('severity', 'Medium')
         ip = incident.get('ip')
         pid = incident.get('pid')
         
-        # For High and Critical incidents, apply containment
-        if severity in ['High', 'Critical']:
-            # Block IP for High/Critical incidents
-            if ip:
-                results['ip_blocked'] = self.block_ip(
-                    ip,
-                    reason=f"{incident.get('type', 'Security Incident')} - {incident.get('rule', 'Rule Triggered')}"
-                )
-            
-            # Kill process for Critical incidents only
-            if severity == 'Critical' and pid:
-                results['process_killed'] = self.kill_process(
-                    pid,
-                    reason=f"{incident.get('type', 'Security Incident')} - Critical severity"
-                )
+        # Get automation policy for this severity level
+        severity_policy = self.automation_policies.get('actions', {}).get(severity, {})
+        
+        if not severity_policy:
+            print(f"⚠️  No automation policy defined for severity: {severity}")
+            return results
+        
+        # Apply IP blocking if policy allows
+        if severity_policy.get('block_ip', False) and ip:
+            success = self.block_ip(
+                ip,
+                reason=f"{incident.get('type', 'Security Incident')} - {incident.get('rule', 'Rule Triggered')}"
+            )
+            results['ip_blocked'] = success
+            if success:
+                self.automation_stats['ips_blocked'] += 1
+            self._log_action('BLOCK_IP', ip, severity, success, incident.get('rule', ''))
+        
+        # Apply process termination if policy allows
+        if severity_policy.get('kill_process', False) and pid:
+            success = self.kill_process(
+                pid,
+                reason=f"{incident.get('type', 'Security Incident')} - {severity} severity"
+            )
+            results['process_killed'] = success
+            if success:
+                self.automation_stats['processes_killed'] += 1
+            self._log_action('KILL_PROCESS', str(pid), severity, success, incident.get('rule', ''))
         
         return results
+    
+    def get_statistics(self) -> Dict:
+        """Get automation statistics."""
+        return self.automation_stats.copy()
+    
+    def get_blocked_ips(self) -> list:
+        """Get list of currently blocked IPs."""
+        return list(self.blocked_ips)
     
     def unblock_ip(self, ip_address: str) -> bool:
         """

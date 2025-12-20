@@ -4,8 +4,10 @@ Log parsing module for extracting security-relevant information from system logs
 Focuses on /var/log/auth.log for authentication events.
 """
 import re
+import subprocess
+import select
 from datetime import datetime
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 
 class AuthLogParser:
     """Parser for /var/log/auth.log to extract authentication events."""
@@ -205,3 +207,74 @@ class AuthLogParser:
         
         return None
 
+
+class JournalLogParser(AuthLogParser):
+    """Parser that reads from systemd-journald using journalctl."""
+    
+    def __init__(self, services: List[str] = ['ssh', 'sshd']):
+        """
+        Initialize journal parser.
+        
+        Args:
+            services: List of systemd variables to filter by (e.g. ssh, sshd)
+        """
+        self.cmd = ['journalctl', '-f', '-n', '0', '--no-pager']
+        # Use -t (syslog identifier) instead of -u (unit) to catch logger messages too
+        # real sshd also uses 'sshd' identifier
+        identifiers = ['sshd', 'ssh', 'sudo', 'su']
+        for ident in identifiers:
+            self.cmd.extend(['-t', ident])
+            
+        self.process = None
+        self.current_year = datetime.now().year
+        self._start_process()
+    
+    def _start_process(self):
+        """Start the journalctl subprocess."""
+        try:
+            self.process = subprocess.Popen(
+                self.cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1
+            )
+            print(f"✅ Started journalctl monitoring: {' '.join(self.cmd)}")
+        except Exception as e:
+            print(f"❌ Error starting journalctl: {e}")
+            self.process = None
+
+    def read_new_lines(self, last_position: int = 0) -> Tuple[List[str], int]:
+        """
+        Read new lines from journalctl stdout.
+        Ignores last_position as this is a stream.
+        """
+        lines = []
+        if not self.process:
+            return [], 0
+
+        # Check if process is still alive
+        if self.process.poll() is not None:
+            print("⚠️  journalctl process died, restarting...")
+            self._start_process()
+            return [], 0
+
+        # Read available lines without blocking
+        try:
+            while True:
+                # Check for data on stdout
+                reads = [self.process.stdout.fileno()]
+                ret = select.select(reads, [], [], 0.0) # 0.0 timeout = non-blocking check
+                
+                if not ret[0]:
+                    break
+                
+                line = self.process.stdout.readline()
+                if line:
+                    lines.append(line)
+                else:
+                    break
+        except Exception as e:
+            print(f"Error reading journal: {e}")
+            
+        return lines, 0

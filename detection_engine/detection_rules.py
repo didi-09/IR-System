@@ -204,7 +204,10 @@ class DetectionEngine:
         """Initialize detection engine with default rules."""
         self.rules = [
             BruteForceRule(threshold=3, time_window_seconds=60),
-            RapidLoginAttemptsRule(threshold=10, time_window_seconds=30)
+            RapidLoginAttemptsRule(threshold=10, time_window_seconds=30),
+            SudoFailureRule(threshold=3, time_window_seconds=300),
+            OffHoursLoginRule(start_hour=22, end_hour=6),
+            UserEnumerationRule(threshold=5, time_window_seconds=120)
         ]
     
     def add_rule(self, rule: DetectionRule):
@@ -230,3 +233,161 @@ class DetectionEngine:
         
         return incidents
 
+
+class SudoFailureRule(DetectionRule):
+    """Detects multiple failed sudo attempts."""
+    
+    def __init__(self, threshold: int = 3, time_window_seconds: int = 300):
+        super().__init__(
+            rule_name="Multiple Sudo Failures Detected",
+            incident_type="Privilege Escalation Attempt",
+            severity="High"
+        )
+        self.threshold = threshold
+        self.time_window = timedelta(seconds=time_window_seconds)
+    
+    def check(self, events: List[Dict]) -> Optional[Dict]:
+        sudo_events = [
+            e for e in events 
+            if e.get('type') == 'failed_login' and 
+            (e.get('target', '').lower() in ['root', 'sudo'])
+        ]
+        
+        if len(sudo_events) < self.threshold:
+            return None
+        
+        ip_groups = defaultdict(list)
+        for event in sudo_events:
+            ip_groups[event['ip']].append(event)
+        
+        for ip, ip_events in ip_groups.items():
+            if len(ip_events) < self.threshold:
+                continue
+            
+            ip_events.sort(key=lambda x: x['timestamp'])
+            
+            for i in range(len(ip_events) - self.threshold + 1):
+                window_start = ip_events[i]['timestamp']
+                window_end = window_start + self.time_window
+                
+                window_events = [
+                    e for e in ip_events[i:]
+                    if window_start <= e['timestamp'] <= window_end
+                ]
+                
+                if len(window_events) >= self.threshold:
+                    latest_event = max(window_events, key=lambda x: x['timestamp'])
+                    
+                    return {
+                        'ip': ip,
+                        'type': self.incident_type,
+                        'severity': self.severity,
+                        'timestamp': latest_event['timestamp'].isoformat(),
+                        'rule': self.rule_name,
+                        'source_log': '/var/log/auth.log',
+                        'target': 'root',
+                        'attempt_count': len(window_events)
+                    }
+        
+        return None
+
+
+class OffHoursLoginRule(DetectionRule):
+    """Detects login attempts during off-hours (10 PM - 6 AM)."""
+    
+    def __init__(self, start_hour: int = 22, end_hour: int = 6):
+        super().__init__(
+            rule_name="Off-Hours Login Attempt",
+            incident_type="Suspicious Login Time",
+            severity="Medium"
+        )
+        self.start_hour = start_hour
+        self.end_hour = end_hour
+    
+    def check(self, events: List[Dict]) -> Optional[Dict]:
+        for event in events:
+            if event.get('type') not in ['failed_login', 'successful_login']:
+                continue
+            
+            timestamp = event.get('timestamp')
+            if not timestamp:
+                continue
+            
+            hour = timestamp.hour
+            
+            is_off_hours = False
+            if self.start_hour > self.end_hour:
+                is_off_hours = hour >= self.start_hour or hour < self.end_hour
+            else:
+                is_off_hours = self.start_hour <= hour < self.end_hour
+            
+            if is_off_hours:
+                return {
+                    'ip': event.get('ip'),
+                    'type': self.incident_type,
+                    'severity': self.severity,
+                    'timestamp': timestamp.isoformat(),
+                    'rule': f"{self.rule_name} ({hour:02d}:00)",
+                    'source_log': '/var/log/auth.log',
+                    'target': event.get('target')
+                }
+        
+        return None
+
+
+class UserEnumerationRule(DetectionRule):
+    """Detects user enumeration attempts."""
+    
+    def __init__(self, threshold: int = 5, time_window_seconds: int = 120):
+        super().__init__(
+            rule_name="User Enumeration Detected",
+            incident_type="Reconnaissance",
+            severity="Medium"
+        )
+        self.threshold = threshold
+        self.time_window = timedelta(seconds=time_window_seconds)
+    
+    def check(self, events: List[Dict]) -> Optional[Dict]:
+        invalid_user_events = [
+            e for e in events 
+            if e.get('type') == 'invalid_user'
+        ]
+        
+        if len(invalid_user_events) < self.threshold:
+            return None
+        
+        ip_groups = defaultdict(list)
+        for event in invalid_user_events:
+            ip_groups[event['ip']].append(event)
+        
+        for ip, ip_events in ip_groups.items():
+            if len(ip_events) < self.threshold:
+                continue
+            
+            ip_events.sort(key=lambda x: x['timestamp'])
+            
+            for i in range(len(ip_events) - self.threshold + 1):
+                window_start = ip_events[i]['timestamp']
+                window_end = window_start + self.time_window
+                
+                window_events = [
+                    e for e in ip_events[i:]
+                    if window_start <= e['timestamp'] <= window_end
+                ]
+                
+                if len(window_events) >= self.threshold:
+                    latest_event = max(window_events, key=lambda x: x['timestamp'])
+                    unique_users = set(e.get('target') for e in window_events)
+                    
+                    return {
+                        'ip': ip,
+                        'type': self.incident_type,
+                        'severity': self.severity,
+                        'timestamp': latest_event['timestamp'].isoformat(),
+                        'rule': f"{self.rule_name} ({len(unique_users)} users)",
+                        'source_log': '/var/log/auth.log',
+                        'target': f"{len(unique_users)} different users",
+                        'attempt_count': len(window_events)
+                    }
+        
+        return None

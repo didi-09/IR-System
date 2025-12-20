@@ -8,8 +8,18 @@ import requests
 import json
 import sys
 import os
+import subprocess
 from datetime import datetime
 from typing import List, Dict, Optional
+
+# Ensure we can import from server_backend
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'server_backend')))
+    from models import Session, SSHEvent
+except ImportError:
+    print("Warning: Could not import models. Database storage will be disabled.")
+    Session = None
+
 
 # Handle imports for both script and module execution
 try:
@@ -17,6 +27,7 @@ try:
     from .detection_rules import DetectionEngine
     from .containment import ContainmentActions
     from .system_info import collect_incident_context, print_system_info_summary, get_running_processes
+    from .network_monitor import PingMonitor, TrafficMonitor
 except ImportError:
     # If relative imports fail, try absolute imports (for direct script execution)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -24,6 +35,16 @@ except ImportError:
     from detection_rules import DetectionEngine
     from containment import ContainmentActions
     from system_info import collect_incident_context, print_system_info_summary, get_running_processes
+    from system_info import collect_incident_context, print_system_info_summary, get_running_processes
+    from network_monitor import PingMonitor, TrafficMonitor
+
+# Import AlertManager
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'server_backend')))
+    from alert_manager import AlertManager
+except ImportError:
+    print("Warning: AlertManager could not be imported. Email alerts disabled.")
+    AlertManager = None
 
 class DetectionAgent:
     """
@@ -48,7 +69,23 @@ class DetectionAgent:
             check_interval: Seconds between log checks
             collect_system_info: If True, collect system info when incidents detected (Day 3)
         """
-        self.log_parser = AuthLogParser(log_file)
+        # Check if log file exists
+        if os.path.exists(log_file):
+            self.log_parser = AuthLogParser(log_file)
+        else:
+            print(f"⚠️  Log file {log_file} not found locally.")
+            # Check if journalctl is available
+            try:
+                subprocess.check_call(['which', 'journalctl'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print("🔄 Falling back to journalctl monitoring...")
+                # Import JournalLogParser from log_parser (it should be there now)
+                from log_parser import JournalLogParser
+                self.log_parser = JournalLogParser()
+            except (subprocess.CalledProcessError, ImportError, Exception) as e:
+                print(f"❌ journalctl not found or error loading JournalLogParser: {e}")
+                print("   Using default simulation mode.")
+                self.log_parser = AuthLogParser(log_file) # Fallback to original behavior (will print warning)
+        
         self.detection_engine = DetectionEngine()
         self.containment = ContainmentActions(simulation_mode=simulation_mode)
         self.api_url = api_url
@@ -56,6 +93,14 @@ class DetectionAgent:
         self.collect_system_info = collect_system_info
         self.last_position = 0
         self.running = False
+        
+        # Initialize Monitors
+        self.ping_monitor = PingMonitor()
+        self.ping_monitor = PingMonitor()
+        self.traffic_monitor = TrafficMonitor()
+        
+        # Initialize AlertManager
+        self.alert_manager = AlertManager() if AlertManager else None
         
         # Track recent events for detection (keep last 1000 events)
         self.recent_events: List[Dict] = []
@@ -194,6 +239,46 @@ class DetectionAgent:
             print("✅ Incident handling complete\n")
         else:
             print("⚠️  Incident detected but alert failed to send\n")
+            
+        # Send Email Alert (High/Critical only)
+        if self.alert_manager and incident.get('severity') in ['High', 'Critical']:
+            self.alert_manager.send_email_alert(incident)
+
+    def save_ssh_event(self, event: Dict):
+        """
+        Save SSH event to database.
+        """
+        if not Session:
+            return
+
+        session = Session()
+        try:
+            # Map event type to database format
+            evt_type = 'UNKNOWN'
+            if event['type'] == 'successful_login':
+                evt_type = 'SUCCESS'
+            elif event['type'] == 'failed_login':
+                evt_type = 'FAILURE'
+            elif event['type'] == 'invalid_user':
+                evt_type = 'FAILURE'
+            
+            ssh_event = SSHEvent(
+                timestamp=event.get('timestamp', datetime.utcnow()),
+                source_ip=event.get('ip'),
+                username=event.get('target'),
+                event_type=evt_type,
+                auth_method='password', # Default assume password for now, log parser doesn't extract method yet
+                port=int(event.get('port', 22))
+            )
+            session.add(ssh_event)
+            session.commit()
+            # print(f"Logged SSH Event: {evt_type} for {event.get('target')} from {event.get('ip')}")
+        except Exception as e:
+            print(f"Error saving SSH event: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
     
     def run_once(self):
         """Run one iteration of log monitoring and detection."""
@@ -209,6 +294,8 @@ class DetectionAgent:
         for line in new_lines:
             parsed_event = self.log_parser.parse_log_line(line)
             if parsed_event:
+                # Save raw event to DB (Day 11 requirement)
+                self.save_ssh_event(parsed_event)
                 new_events.append(parsed_event)
         
         if not new_events:
@@ -226,6 +313,11 @@ class DetectionAgent:
     def start(self):
         """Start the detection agent (runs continuously)."""
         self.running = True
+        
+        # Start monitors
+        self.ping_monitor.start()
+        self.traffic_monitor.start()
+        
         print("\n🔄 Starting detection agent...")
         print("Press Ctrl+C to stop\n")
         
@@ -243,6 +335,8 @@ class DetectionAgent:
     def stop(self):
         """Stop the detection agent."""
         self.running = False
+        self.ping_monitor.stop()
+        self.traffic_monitor.stop()
 
 
 def main():
@@ -263,7 +357,7 @@ def main():
     parser.add_argument(
         '--simulation',
         action='store_true',
-        default=True,
+        default=False,
         help='Run in simulation mode (safe, no real actions)'
     )
     parser.add_argument(

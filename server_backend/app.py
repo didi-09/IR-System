@@ -1,4 +1,4 @@
-# app.py (Didi's Server Backend - Day 5, 7, 9, 10 Logic)
+# app.py (Didi's Server Backend - Day 5, 7, 9, 10 Logic + AI Model)
 from flask import Flask, request, jsonify
 # NOTE: We assume 'models.py' exists and defines Incident, Session, and engine.
 from models import Incident, Session, engine 
@@ -7,7 +7,31 @@ import time
 import requests
 import os
 import json
-from sqlalchemy import func 
+from sqlalchemy import func
+
+# Import threat intelligence
+try:
+    from threat_intel import get_threat_intel
+    threat_intel = get_threat_intel()
+    THREAT_INTEL_ENABLED = True
+    print("✅ Threat Intelligence enabled")
+except ImportError as e:
+    THREAT_INTEL_ENABLED = False
+    print(f"⚠️  Threat Intelligence not available: {e}")
+
+# Import email notifier
+try:
+    from email_notifier import get_email_notifier
+    email_notifier = get_email_notifier()
+    EMAIL_ENABLED = email_notifier.enabled
+    if EMAIL_ENABLED:
+        print("✅ Email notifications enabled")
+    else:
+        print("⚠️  Email notifications disabled - configure SMTP in .env")
+except ImportError as e:
+    EMAIL_ENABLED = False
+    print(f"⚠️  Email notifier not available: {e}")
+
 
 # --- Configuration for Webhook/Email (Placeholder values) ---
 WEBHOOK_URL = "https://your.slack.webhook.url/..."
@@ -125,11 +149,19 @@ def send_notification(incident_details):
     Action Required: Review the Sentinel Dashboard immediately.
     """
     
-    # In this simulation, we print the notification to the server console.
+    
+    # Console notification (always shown)
     print("-" * 50)
     print(f"NOTIFICATION SENT (Severity: {severity})")
     print(message)
     print("-" * 50)
+    
+    # Send email notification if configured
+    if EMAIL_ENABLED:
+        try:
+            email_notifier.send_incident_alert(incident_details)
+        except Exception as e:
+            print(f"⚠️  Email notification failed: {e}")
 
 
 @app.route('/api/alert', methods=['POST'])
@@ -150,10 +182,27 @@ def receive_alert():
         print(f"Received incomplete data: {incident_data}")
         return jsonify({"message": "Error: Missing required incident fields (need ip, type, severity, timestamp)"}), 400
 
+
+    # --- NEW: Threat Intelligence Enrichment (GeoIP + AbuseIPDB) ---
+    threat_data = {}
+    if THREAT_INTEL_ENABLED:
+        try:
+            ip_address = incident_data.get('ip')
+            print(f"🔍 Enriching incident with threat intelligence for {ip_address}...")
+            threat_data = threat_intel.enrich_ip(ip_address)
+            print(f"   Risk Level: {threat_data.get('risk_level')}, Score: {threat_data.get('risk_score')}")
+            
+            # Store for later use in incident creation
+            incident_data['_threat_data'] = threat_data
+        except Exception as e:
+            print(f"⚠️  Threat intelligence enrichment failed: {e}")
+    
     # --- Day 9: Threat Intelligence Enrichment ---
     incident_data = enrich_incident_data(incident_data)
     if incident_data.get('threat_intel', {}).get('is_blacklisted'):
         print(f"⚠️  BLACKLISTED IP DETECTED: {incident_data.get('ip')}")
+    
+
 
     # 2. Database Ingestion
     session = Session()
@@ -161,16 +210,48 @@ def receive_alert():
         # Convert the string timestamp (ISO 8601 format) into a Python datetime object
         timestamp_dt = datetime.fromisoformat(incident_data.get('timestamp'))
         
-        # Create a new Incident object
+        # Create a new Incident object with full schema support
         new_incident = Incident(
+            # Core required fields
             ip=incident_data.get('ip'),
             type=incident_data.get('type'),
             severity=incident_data.get('severity'),
             timestamp=timestamp_dt,
+            source_log=incident_data.get('source_log', '/var/log/syslog'),
+            target=incident_data.get('target', 'Unknown'),
+            
+            # Core fields
             rule=incident_data.get('rule', f"{incident_data.get('type')} Incident Detected"),
-            status="Active", 
-            source_log=incident_data.get('source_log'),
-            target=incident_data.get('target')
+            status=incident_data.get('status', 'Active'),
+            
+            # Extended fields (preserve if available)
+            target_ip=str(incident_data.get('target_ip', '')),
+            outcome=incident_data.get('outcome'),
+            data_compromised_GB=str(incident_data.get('data_compromised_GB', '0.0')),
+            attack_duration_min=int(incident_data.get('attack_duration_min', 0)) if incident_data.get('attack_duration_min') is not None else None,
+            security_tools_used=incident_data.get('security_tools_used'),
+            user_role=incident_data.get('user_role'),
+            location=incident_data.get('location'),
+            attack_severity=int(incident_data.get('attack_severity', 5)) if incident_data.get('attack_severity') is not None else None,
+            industry=incident_data.get('industry'),
+            response_time_min=int(incident_data.get('response_time_min', 0)) if incident_data.get('response_time_min') is not None else None,
+            mitigation_method=incident_data.get('mitigation_method'),
+            
+            # Threat Intelligence fields
+            geo_country=threat_data.get('geoip', {}).get('country'),
+            geo_country_code=threat_data.get('geoip', {}).get('country_code'),
+            geo_city=threat_data.get('geoip', {}).get('city'),
+            geo_region=threat_data.get('geoip', {}).get('region'),
+            geo_lat=str(threat_data.get('geoip', {}).get('lat', '')),
+            geo_lon=str(threat_data.get('geoip', {}).get('lon', '')),
+            geo_isp=threat_data.get('geoip', {}).get('isp'),
+            geo_org=threat_data.get('geoip', {}).get('org'),
+            is_proxy=str(threat_data.get('geoip', {}).get('is_proxy', False)),
+            is_hosting=str(threat_data.get('geoip', {}).get('is_hosting', False)),
+            abuse_confidence_score=threat_data.get('abuseipdb', {}).get('abuse_confidence_score'),
+            abuse_total_reports=threat_data.get('abuseipdb', {}).get('total_reports'),
+            threat_risk_score=threat_data.get('risk_score'),
+            threat_risk_level=threat_data.get('risk_level')
         )
 
         session.add(new_incident)
@@ -259,7 +340,8 @@ def get_incident(incident_id):
         if not incident:
             return jsonify({"message": f"Incident {incident_id} not found"}), 404
         
-        return jsonify({
+        # Return full incident data with all fields
+        response = {
             "id": incident.id,
             "ip": incident.ip,
             "type": incident.type,
@@ -269,7 +351,33 @@ def get_incident(incident_id):
             "status": incident.status,
             "source_log": incident.source_log,
             "target": incident.target
-        }), 200
+        }
+        
+        # Add extended fields if available
+        if incident.target_ip:
+            response["target_ip"] = incident.target_ip
+        if incident.outcome:
+            response["outcome"] = incident.outcome
+        if incident.data_compromised_GB:
+            response["data_compromised_GB"] = incident.data_compromised_GB
+        if incident.attack_duration_min is not None:
+            response["attack_duration_min"] = incident.attack_duration_min
+        if incident.security_tools_used:
+            response["security_tools_used"] = incident.security_tools_used
+        if incident.user_role:
+            response["user_role"] = incident.user_role
+        if incident.location:
+            response["location"] = incident.location
+        if incident.attack_severity is not None:
+            response["attack_severity"] = incident.attack_severity
+        if incident.industry:
+            response["industry"] = incident.industry
+        if incident.response_time_min is not None:
+            response["response_time_min"] = incident.response_time_min
+        if incident.mitigation_method:
+            response["mitigation_method"] = incident.mitigation_method
+        
+        return jsonify(response), 200
         
     except Exception as e:
         print(f"Error fetching incident {incident_id}: {e}")
@@ -359,7 +467,10 @@ def system_status():
     finally:
         session.close()
 
+
+
 # Run the app
 if __name__ == '__main__':
     print("Starting Flask API server on http://127.0.0.1:5000")
+
     app.run(debug=True, port=5000)

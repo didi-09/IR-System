@@ -1,0 +1,54 @@
+{
+    "ping_targets": [
+        "8.8.8.8",
+        "1.1.1.1",
+        "192.168.1.1"
+    ],
+    "dos_thresholds": {
+        "cpu_percent": 80.0,
+        "pps_in": 1000,
+        "pps_out_ratio": 10.0
+    },
+    "simulation_mode": false,
+    "automation_policies": {
+        "enabled": true,
+        "actions": {
+            "Critical": {
+                "block_ip": false,
+                "kill_process": false,
+                "send_email": false,
+                "send_desktop_alert": true,
+                "auto_resolve": false
+            },
+            "High": {
+                "block_ip": true,
+                "kill_process": false,
+                "send_email": true,
+                "send_desktop_alert": true,
+                "auto_resolve": false
+            },
+            "Medium": {
+                "block_ip": false,
+                "kill_process": false,
+                "send_email": false,
+                "send_desktop_alert": true,
+                "auto_resolve": false
+            },
+            "Low": {
+                "block_ip": false,
+                "kill_process": false,
+                "send_email": false,
+                "send_desktop_alert": true,
+                "auto_resolve": true
+            }
+        }
+    },
+    "email_alerts": {
+        "enabled": false,
+        "recipient": "abdelrahamanzakaria@gmail.com",
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "sender_email": "",
+        "sender_password": ""
+    }
+}

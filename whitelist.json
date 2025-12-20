@@ -1,0 +1,21 @@
+{
+  "whitelist": {
+    "ips": [
+      "127.0.0.1",
+      "::1"
+    ],
+    "networks": [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16"
+    ],
+    "description": "Trusted IPs and networks that should never be blocked"
+  },
+  "notes": {
+    "127.0.0.1": "Localhost",
+    "::1": "IPv6 localhost",
+    "10.0.0.0/8": "Private network range",
+    "172.16.0.0/12": "Private network range",
+    "192.168.0.0/16": "Private network range"
+  }
+}
