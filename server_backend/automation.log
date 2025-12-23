@@ -1,0 +1,12 @@
+[2025-12-23 02:21:34] SUCCESS - BLOCK_IP | Target: 99.99.99.99 | Severity: High | Reason: Failed Login Count Exceeded
+[2025-12-23 02:21:37] SUCCESS - BLOCK_IP | Target: 99.99.99.99 | Severity: High | Reason: Multiple Sudo Failures Detected
+[2025-12-23 02:21:52] SUCCESS - BLOCK_IP | Target: 99.99.99.99 | Severity: High | Reason: Failed Login Count Exceeded
+[2025-12-23 02:21:54] SUCCESS - BLOCK_IP | Target: 99.99.99.99 | Severity: High | Reason: Multiple Sudo Failures Detected
+[2025-12-23 02:22:03] SUCCESS - BLOCK_IP | Target: 99.99.99.99 | Severity: High | Reason: Failed Login Count Exceeded
+[2025-12-23 02:22:06] SUCCESS - BLOCK_IP | Target: 99.99.99.99 | Severity: High | Reason: Multiple Sudo Failures Detected
+[2025-12-23 02:22:16] SUCCESS - BLOCK_IP | Target: 99.99.99.99 | Severity: High | Reason: Failed Login Count Exceeded
+[2025-12-23 02:22:18] SUCCESS - BLOCK_IP | Target: 99.99.99.99 | Severity: High | Reason: Multiple Sudo Failures Detected
+[2025-12-23 02:36:32] SUCCESS - BLOCK_IP | Target: 185.220.101.45 | Severity: High | Reason: Failed Login Count Exceeded
+[2025-12-23 02:36:43] SUCCESS - BLOCK_IP | Target: 185.220.101.45 | Severity: High | Reason: Failed Login Count Exceeded
+[2025-12-23 02:36:46] SUCCESS - BLOCK_IP | Target: 185.220.101.45 | Severity: Critical | Reason: Rapid Login Attempts Detected
+[2025-12-23 02:36:48] SUCCESS - BLOCK_IP | Target: 185.220.101.45 | Severity: High | Reason: Multiple Sudo Failures Detected

@@ -166,52 +166,68 @@ Sentinel is a **fully automated** Security Operations Center (SOC) platform desi
 
 ```
 IR-System/
-├── 📄 Core Configuration
-│   ├── README.md                 # Complete documentation
-│   ├── requirements.txt          # Python dependencies
-│   ├── .env.example              # Environment variables template
-│   ├── whitelist.json            # Trusted IPs (never blocked)
-│   ├── ip_blacklist.json         # Known malicious IPs
-│   ├── database.db               # Active SQLite database
-│   ├── threat_intel_cache.sqlite # Threat intelligence cache
-│   └── start_real_mode.sh        # ⭐ Main startup script
+├── 📄 Core Files
+│   ├── README.md                      # Complete documentation
+│   ├── Sentinel_Project_Documentation.pdf  # PDF documentation
+│   ├── requirements.txt               # Python dependencies
+│   ├── whitelist.json                 # Trusted IPs (never blocked)
+│   ├── ip_blacklist.json              # Known malicious IPs
+│   ├── database.db                    # Main SQLite database
+│   ├── threat_intel_cache.sqlite      # Threat intelligence cache
+│   ├── start_sentinel.sh              # ⭐ Unified launcher (recommended)
+│   ├── start_real_mode.sh             # Alternative startup script
+│   ├── cleanup_temp_files.sh          # Clean temporary test files
+│   └── generate_pdf.py                # Generate documentation PDF
 │
 ├── 🔍 detection_engine/
-│   ├── detection_agent.py        # Main monitoring agent
-│   ├── log_parser.py             # ✅ Log parsing (sshd-session fix)
-│   ├── detection_rules.py        # 5 detection rules
-│   ├── containment.py            # Automated response actions
-│   ├── system_info.py            # System context collection
-│   ├── network_monitor.py        # Network monitoring
+│   ├── detection_agent.py             # Main monitoring agent
+│   ├── log_parser.py                  # Multi-format log parsing
+│   ├── log_source_manager.py          # Log source coordination
+│   ├── log_discovery.py               # Automatic log file discovery
+│   ├── detection_rules.py             # 5 detection rules
+│   ├── containment.py                 # Automated response actions
+│   ├── system_info.py                 # System context collection
+│   ├── system_monitor.py              # System resource monitoring
+│   ├── network_monitor.py             # Network monitoring
 │   └── __init__.py
 │
 ├── 🖥️ server_backend/
-│   ├── app.py                    # Flask API + threat intel
-│   ├── dashboard.py              # Streamlit dashboard
-│   ├── models.py                 # Database models (SQLAlchemy)
-│   ├── threat_intel.py           # GeoIP + AbuseIPDB integration
-│   ├── alert_manager.py          # Desktop + email notifications
-│   ├── email_notifier.py         # SMTP email sender
-│   ├── report_generator.py       # PDF report generation
-│   ├── config_manager.py         # Configuration management
-│   └── config.json               # Runtime configuration
+│   ├── app.py                         # Flask API + threat intel
+│   ├── dashboard.py                   # Streamlit dashboard
+│   ├── models.py                      # Database models (SQLAlchemy)
+│   ├── threat_intel.py                # GeoIP + AbuseIPDB integration
+│   ├── threat_intel_cache.sqlite      # Threat intel cache (local)
+│   ├── alert_manager.py               # Desktop + email notifications
+│   ├── email_notifier.py              # SMTP email sender
+│   ├── report_generator.py            # PDF report generation
+│   ├── config_manager.py              # Configuration management
+│   ├── config.json                    # Runtime configuration
+│   ├── alerts.log                     # Alert notifications log
+│   ├── automation.log                 # Automation actions log
+│   └── incidents.db                   # Incidents database (symlink)
 │
 ├── 🧪 tests/
-│   ├── test_api_direct.py        # API integration tests
-│   ├── test_backend.py           # Backend tests
-│   ├── test_detection.py         # Detection rules tests
-│   ├── test_automation_policies.py # Automation policy tests
-│   ├── test_network_features.py  # Network monitoring tests
-│   ├── quick_test.sh             # Quick test script
-│   └── run_all_tests.py          # Test runner
+│   ├── test_api_direct.py             # API integration tests
+│   ├── test_backend.py                # Backend tests
+│   ├── test_detection.py              # Detection rules tests
+│   ├── test_automation_policies.py    # Automation policy tests
+│   ├── test_network_features.py       # Network monitoring tests
+│   ├── test_email_config.py           # Email configuration tests
+│   ├── test_real_credentials.py       # Live credential tests
+│   ├── quick_test.sh                  # Quick test script
+│   └── run_all_tests.py               # Test runner
 │
-├── � Data & Logs
-│   ├── archive/                  # Incident backups
-│   ├── logs/                     # Runtime logs
-│   ├── reports/                  # Generated PDF reports
-│   └── simulate_data_stream.py   # Testing/demo data generator
+├── 📊 Data & Logs
+│   ├── archive/                       # Incident backups
+│   │   └── incidents_backup_*.json
+│   ├── logs/                          # Runtime logs
+│   ├── reports/                       # Generated PDF reports
+│   │   └── incident_report_*.pdf
+│   ├── simulate_data_stream.py        # Testing/demo data generator
+│   ├── simulate_realistic_attack.py   # Realistic attack simulator
+│   └── generate_realtime_events.sh    # Real-time event generator
 │
-└── .git/                         # Version control
+└── .git/                              # Version control
 ```
 
 ---
@@ -265,16 +281,6 @@ sudo apt install python3-flask python3-sqlalchemy python3-streamlit \
 
 ---
 
-## ⚡ Quick Start
-
-### Start the Complete System
-
-```bash
-# Production mode (requires sudo for real actions)
-sudo ./start_real_mode.sh
-```
-
-This starts:
 1. **Flask API** on http://127.0.0.1:5000
 2. **Streamlit Dashboard** on http://localhost:8501
 3. **Detection Agent** monitoring system logs

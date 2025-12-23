@@ -14,7 +14,7 @@
         "enabled": true,
         "actions": {
             "Critical": {
-                "block_ip": false,
+                "block_ip": true,
                 "kill_process": false,
                 "send_email": false,
                 "send_desktop_alert": true,

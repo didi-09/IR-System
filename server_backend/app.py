@@ -385,6 +385,94 @@ def get_incident(incident_id):
     finally:
         session.close()
 
+@app.route('/api/incidents', methods=['GET'])
+def get_all_incidents():
+    """Get all incidents (optionally filtered)."""
+    session = Session()
+    try:
+        # Optional query parameters for filtering
+        status = request.args.get('status')
+        severity = request.args.get('severity')
+        limit = request.args.get('limit', type=int, default=100)
+        
+        # Build query
+        query = session.query(Incident)
+        
+        if status:
+            query = query.filter(Incident.status == status)
+        if severity:
+            query = query.filter(Incident.severity == severity)
+        
+        # Order by most recent first and limit results
+        incidents = query.order_by(Incident.timestamp.desc()).limit(limit).all()
+        
+        # Convert to list of dictionaries
+        result = []
+        for incident in incidents:
+            incident_dict = {
+                "id": incident.id,
+                "ip": incident.ip,
+                "type": incident.type,
+                "severity": incident.severity,
+                "timestamp": incident.timestamp.isoformat(),
+                "rule": incident.rule,
+                "status": incident.status,
+                "source_log": incident.source_log,
+                "target": incident.target
+            }
+            result.append(incident_dict)
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        print(f"Error fetching incidents: {e}")
+        return jsonify({"message": f"Internal server error: {e}"}), 500
+    finally:
+        session.close()
+
+@app.route('/api/incidents/clear', methods=['DELETE'])
+def clear_incidents():
+    """Clear incidents from database with optional filtering."""
+    session = Session()
+    try:
+        # Optional query parameters for filtering
+        severity = request.args.get('severity')
+        status = request.args.get('status')
+        days = request.args.get('days', type=int)
+        
+        # Build query
+        query = session.query(Incident)
+        
+        # Apply filters if provided
+        if severity:
+            query = query.filter(Incident.severity == severity)
+        if status:
+            query = query.filter(Incident.status == status)
+        if days:
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            query = query.filter(Incident.timestamp >= cutoff_date)
+        
+        # Count before delete
+        count = query.count()
+        
+        # Delete matching incidents
+        query.delete(synchronize_session=False)
+        session.commit()
+        
+        print(f"🗑️  Cleared {count} incidents from database")
+        
+        return jsonify({
+            "message": f"Successfully cleared {count} incident(s)",
+            "count": count
+        }), 200
+        
+    except Exception as e:
+        session.rollback()
+        print(f"Error clearing incidents: {e}")
+        return jsonify({"message": f"Error clearing incidents: {e}"}), 500
+    finally:
+        session.close()
+
 # --- Day 10: System Status Monitoring ---
 
 @app.route('/api/status', methods=['GET'])

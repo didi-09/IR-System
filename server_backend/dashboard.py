@@ -46,6 +46,46 @@ def get_severity_rank(severity):
     }
     return severity_ranks.get(severity, 0)
 
+def generate_incident_details(incident):
+    """
+    Generate context-specific details based on incident type.
+    Returns a concise, human-readable summary.
+    """
+    incident_type = incident.type.lower() if incident.type else ""
+    
+    # Network/Authentication Incidents
+    if any(word in incident_type for word in ['brute force', 'login', 'ssh', 'authentication']):
+        attempts_info = f"from {incident.ip}" if incident.ip and incident.ip != "127.0.0.1" else ""
+        return f"User: {incident.target} | {attempts_info}".strip(" |")
+    
+    # System Resource Incidents
+    elif any(word in incident_type for word in ['disk', 'cpu', 'memory', 'resource']):
+        source = incident.source_log.split('/')[-1] if incident.source_log else "system"
+        return f"Source: {source} | Resource threshold exceeded"
+    
+    # Web Attacks
+    elif any(word in incident_type for word in ['sql', 'xss', 'injection', 'web']):
+        method = "Web Application Attack"
+        source = f"from {incident.ip}" if incident.ip and incident.ip != "127.0.0.1" else ""
+        return f"{method} {source}".strip()
+    
+    # Process/Service Incidents
+    elif any(word in incident_type for word in ['process', 'service', 'sudo']):
+        return f"Target: {incident.target} | Process/Service monitoring"
+    
+    # File Integrity
+    elif any(word in incident_type for word in ['file', 'integrity', 'modification']):
+        return f"File: {incident.target}"
+    
+    # User Enumeration
+    elif 'enumeration' in incident_type:
+        return f"Multiple user probes from {incident.ip}" if incident.ip else "User enumeration detected"
+    
+    # Default fallback
+    else:
+        log_name = incident.source_log.split('/')[-1] if incident.source_log else "N/A"
+        return f"Source: {log_name}"
+
 def load_incidents(severity_filter=None, days_filter=None, ip_filter=None, target_filter=None, status_filter='Active'):
     """
     Connects to the database, fetches incidents, and applies filtering logic.
@@ -103,20 +143,26 @@ def load_incidents(severity_filter=None, days_filter=None, ip_filter=None, targe
             {
                 "ID": inc.id,
                 "Time (UTC)": inc.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                "Source IP": inc.ip,
                 "Type": inc.type,
                 "Severity": inc.severity,
-                "Severity Rank": get_severity_rank(inc.severity),  # Day 8: Add rank for sorting
-                "Rule Triggered": inc.rule,
+                "Severity Rank": get_severity_rank(inc.severity),
+                # Smart Source field - shows IP for external, log for internal
+                "Source": inc.ip if inc.ip and inc.ip not in ["127.0.0.1", "localhost", "::1"] else (inc.source_log.split('/')[-1] if inc.source_log else "System"),
                 "Target": inc.target,
+                "Source Log": inc.source_log.split('/')[-1] if inc.source_log else "N/A",
+                "Details": generate_incident_details(inc),
+                "Duration": f"{inc.attack_duration_min}m" if inc.attack_duration_min and inc.attack_duration_min > 0 else "N/A",
+                "Outcome": inc.outcome if inc.outcome else "N/A",
                 "Status": inc.status,
-                # Threat Intelligence fields
-                "Country": inc.geo_country if inc.geo_country else "Unknown",
-                "City": inc.geo_city if inc.geo_city else "Unknown",
-                "ISP": inc.geo_isp if inc.geo_isp else "Unknown",
+                "Rule": inc.rule,
+                # Geographic info (only for external IPs)
+                "Country": inc.geo_country if inc.geo_country else "N/A",
+                "City": inc.geo_city if inc.geo_city else "N/A",
+                "ISP": inc.geo_isp if inc.geo_isp else "N/A",
                 "Risk Level": inc.threat_risk_level if inc.threat_risk_level else "Unknown",
                 "Risk Score": inc.threat_risk_score if inc.threat_risk_score else 0,
-                # Store raw incident for export
+                # Store full log path and raw incident for export
+                "Source Log Path": inc.source_log if inc.source_log else "",
                 "_raw": inc
             } for inc in incidents
         ]
@@ -320,6 +366,84 @@ def settings_view():
     else:
         st.info("No local alert logs found.")
 
+    # --- NEW: Clear Incidents Database ---
+    st.markdown("---")
+    st.subheader("🗑️ Clear Incidents Database")
+    st.caption("Permanently delete incidents from the database. Use with caution!")
+    
+    with st.expander("⚠️ Clear Incidents Options", expanded=False):
+        st.warning("**Warning:** This action cannot be undone. Incidents will be permanently deleted from the database.")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            clear_severity = st.selectbox(
+                "Filter by Severity (Optional)",
+                ["All", "Critical", "High", "Medium", "Low"],
+                help="Select specific severity to clear, or 'All' to clear all severities"
+            )
+            
+            clear_status = st.selectbox(
+                "Filter by Status (Optional)",
+                ["All", "Active", "Resolved", "Closed"],
+                help="Select specific status to clear, or 'All' to clear all statuses"
+            )
+        
+        with col2:
+            clear_days = st.number_input(
+                "Older than (days) - Optional",
+                min_value=0,
+                value=0,
+                help="Only clear incidents older than specified days. Use 0 to ignore this filter."
+            )
+            
+            # Show what will be cleared
+            filter_desc = []
+            if clear_severity != "All":
+                filter_desc.append(f"Severity={clear_severity}")
+            if clear_status != "All":
+                filter_desc.append(f"Status={clear_status}")
+            if clear_days > 0:
+                filter_desc.append(f"Older than {clear_days} days")
+            
+            if filter_desc:
+                st.info(f"**Will clear:** {', '.join(filter_desc)}")
+            else:
+                st.error("**Will clear:** ALL INCIDENTS")
+        
+        # Confirmation
+        confirm_clear = st.checkbox("I understand this action cannot be undone", value=False)
+        
+        if st.button("🗑️ Clear Incidents", type="primary", disabled=not confirm_clear):
+            try:
+                # Build query parameters
+                params = {}
+                if clear_severity != "All":
+                    params['severity'] = clear_severity
+                if clear_status != "All":
+                    params['status'] = clear_status
+                if clear_days > 0:
+                    params['days'] = clear_days
+                
+                # Call API
+                response = requests.delete(
+                    f"{API_BASE_URL}/api/incidents/clear",
+                    params=params,
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    count = result.get('count', 0)
+                    st.success(f"✅ Successfully cleared {count} incident(s)!")
+                    st.cache_data.clear()
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed to clear incidents: {response.text}")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+
     # --- Tab 4: Automation Control ---
     st.markdown("---")
     st.subheader("🤖 Automation Policies")
@@ -481,34 +605,117 @@ def main_dashboard_view():
     st.title("Sentinel Incident Response Console 🛡️")
     st.markdown("Real-time view of active security incidents across the network.")
 
-    # --- Day 10: System Status Display ---
-    with st.expander("🔍 System Status", expanded=False):
-        status_data = get_system_status()
+    # --- Enhanced Statistics Dashboard ---
+    st.subheader("📊 System Overview")
+    
+    # Get statistics
+    status_data = get_system_status()
+    session = Session()
+    
+    try:
+        # Calculate metrics
+        total_incidents = session.query(func.count(Incident.id)).scalar()
+        active_incidents = session.query(func.count(Incident.id)).filter(Incident.status == 'Active').scalar()
+        
+        # Last 24 hours
+        last_24h = datetime.utcnow() - timedelta(hours=24)
+        incidents_24h = session.query(func.count(Incident.id)).filter(Incident.timestamp >= last_24h).scalar()
+        
+        # Last 7 days for trend
+        last_7d = datetime.utcnow() - timedelta(days=7)
+        incidents_7d = session.query(func.count(Incident.id)).filter(Incident.timestamp >= last_7d).scalar()
+        
+        # Top attacking IP
+        top_ip_result = session.query(
+            Incident.ip,
+            func.count(Incident.id).label('count')
+        ).group_by(Incident.ip).order_by(func.count(Incident.id).desc()).first()
+        
+        top_ip = f"{top_ip_result[0]} ({top_ip_result[1]})" if top_ip_result else "None"
+        
+        # Critical incidents
+        critical_count = session.query(func.count(Incident.id)).filter(Incident.severity == 'Critical').scalar()
+        
+    except Exception as e:
+        total_incidents = active_incidents = incidents_24h = critical_count = 0
+        top_ip = "Error"
+    finally:
+        session.close()
+    
+    # Metrics row
+    metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
+    
+    with metric_col1:
+        st.metric(
+            label="📈 Total Incidents",
+            value=total_incidents,
+            delta=f"+{incidents_24h} (24h)",
+            delta_color="inverse"
+        )
+    
+    with metric_col2:
+        st.metric(
+            label="🚨 Active",
+            value=active_incidents,
+            delta=f"{(active_incidents/total_incidents*100):.1f}%" if total_incidents > 0 else "0%",
+            delta_color="inverse"
+        )
+    
+    with metric_col3:
+        st.metric(
+            label="🔴 Critical",
+            value=critical_count,
+            delta="High Priority" if critical_count > 0 else "None",
+            delta_color="inverse" if critical_count > 0 else "normal"
+        )
+    
+    with metric_col4:
+        st.metric(
+            label="🎯 Top Attacker",
+            value=top_ip,
+            help="Most frequent attacking IP"
+        )
+    
+    with metric_col5:
+        # Agent status
+        agent_status = "🟢 Online" if status_data and status_data.get('system') == 'operational' else "🔴 Offline"
+        st.metric(
+            label="🛡️ Agent Status",
+            value=agent_status,
+            help="Detection agent operational status"
+        )
+    
+    # System Status expandable section
+    with st.expander("🔍 Detailed System Status", expanded=False):
         if status_data:
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
             with col1:
-                system_status = status_data.get('system', 'unknown')
-                status_color = "🟢" if system_status == "operational" else "🟡" if system_status == "degraded" else "🔴"
-                st.metric("System Status", f"{status_color} {system_status.title()}")
-            
-            with col2:
                 db_status = status_data.get('components', {}).get('database', {}).get('status', 'unknown')
                 st.metric("Database", "🟢 Healthy" if db_status == "healthy" else "🔴 Unhealthy")
             
+            with col2:
+                blacklist_status = status_data.get('components', {}).get('blacklist', {})
+                ip_count = blacklist_status.get('ip_count', 0)
+                st.metric("Blacklist IPs", ip_count)
+            
             with col3:
                 stats = status_data.get('statistics', {})
-                st.metric("Total Incidents", stats.get('total_incidents', 0))
+                resolved = stats.get('resolved_incidents', 0)
+                st.metric("Resolved", resolved)
             
-            with col4:
-                st.metric("Active Incidents", stats.get('active_incidents', 0))
-            
-            # Show severity breakdown
-            if 'severity_breakdown' in stats:
-                st.write("**Severity Breakdown:**")
-                severity_cols = st.columns(len(stats['severity_breakdown']))
-                for idx, (severity, count) in enumerate(stats['severity_breakdown'].items()):
-                    with severity_cols[idx]:
-                        st.metric(severity, count)
+            # Severity breakdown
+            if 'severity_breakdown' in stats and stats['severity_breakdown']:
+                st.write("**Current Severity Distribution:**")
+                severity_counts = stats['severity_breakdown']
+                if len(severity_counts) > 0:
+                    severity_cols = st.columns(len(severity_counts))
+                    for idx, (severity, count) in enumerate(severity_counts.items()):
+                        with severity_cols[idx]:
+                            st.metric(severity, count)
+                else:
+                    st.info("No incidents to display severity distribution")
+            else:
+                st.info("Severity breakdown not available")
         else:
             st.warning("⚠️ Could not fetch system status. Ensure Flask API is running.")
     
@@ -577,8 +784,8 @@ def main_dashboard_view():
             high_count = len(incident_df[incident_df['Severity'] == 'High'])
             st.metric(label="High", value=high_count)
         with metric_col4:
-            unique_ips = incident_df['Source IP'].nunique()
-            st.metric(label="Unique IPs", value=unique_ips)
+            unique_sources = incident_df['Source'].nunique()
+            st.metric(label="Unique Sources", value=unique_sources)
         
         # Export buttons
         st.markdown("---")
@@ -634,22 +841,117 @@ def main_dashboard_view():
         
         with chart_tab3:
             if not incident_df.empty:
-                ip_counts = incident_df['Source IP'].value_counts().head(10)
-                st.bar_chart(ip_counts)
-                st.caption("Top 10 Source IPs by Incident Count")
+                source_counts = incident_df['Source'].value_counts().head(10)
+                st.bar_chart(source_counts)
+                st.caption("Top 10 Sources by Incident Count")
         
-        # Display the main table (hide Severity Rank and _raw columns)
-        display_df = incident_df.drop(columns=['Severity Rank', '_raw'], errors='ignore')
+        # Display the main table (hide internal columns)
+        display_df = incident_df.drop(columns=['Severity Rank', '_raw', 'Source Log Path'], errors='ignore')
+        
+        # Dynamic column display based on incident types present
+        incident_types = incident_df['Type'].str.lower() if not incident_df.empty else pd.Series()
+        
+        # Detect incident categories
+        has_network = any(kw in ' '.join(incident_types) for kw in ['brute force', 'ssh', 'login', 'enumeration', 'ddos'])
+        has_system = any(kw in ' '.join(incident_types) for kw in ['disk', 'cpu', 'memory', 'resource', 'process', 'service'])
+        has_web = any(kw in ' '.join(incident_types) for kw in ['sql', 'xss', 'injection', 'web'])
+        has_external_ips = not incident_df.empty and any(incident_df['Source'].str.contains(r'\d+\.\d+\.\d+\.\d+', na=False, regex=True))
+        
+        # Build dynamic column order
+        base_columns = ["ID", "Time (UTC)", "Type", "Severity"]
+        detail_columns = []
+        context_columns = []
+        
+        # Always show Source and Target
+        detail_columns.extend(["Source", "Target"])
+        
+        # Show Source Log for system incidents or when relevant
+        if has_system or not has_network:
+            detail_columns.append("Source Log")
+        
+        # Always show Details
+        detail_columns.append("Details")
+        
+        # Show Duration and Outcome if any incidents have these populated
+        if 'Duration' in display_df.columns and (display_df['Duration'] != 'N/A').any():
+            detail_columns.append("Duration")
+        if 'Outcome' in display_df.columns and (display_df['Outcome'] != 'N/A').any():
+            detail_columns.append("Outcome")
+        
+        # Add Status and Rule
+        detail_columns.extend(["Status", "Rule"])
+        
+        # Show geographic/threat intel for external IPs
+        if has_external_ips and has_network:
+            context_columns.extend(["Country", "Risk Level"])
+        
+        # Combine all columns
+        dynamic_columns = tuple(base_columns + detail_columns + context_columns)
         
         st.dataframe(
             display_df,
             width='stretch',
             hide_index=True,
-            column_order=("ID", "Source IP", "Country", "City", "Type", "Severity", "Risk Level", "Time (UTC)", "Target", "Rule Triggered", "Status"),
+            column_order=dynamic_columns,
             column_config={
+                "ID": st.column_config.NumberColumn(
+                    "ID",
+                    help="Incident ID",
+                    width="small"
+                ),
+                "Time (UTC)": st.column_config.DatetimeColumn(
+                    "Time (UTC)",
+                    format="YYYY/MM/DD hh:mm:ss",
+                    width="medium"
+                ),
+                "Type": st.column_config.TextColumn(
+                    "Type",
+                    help="Incident category (Network, System, Web, Database)",
+                    width="medium"
+                ),
                 "Severity": st.column_config.TextColumn(
                     "Severity",
-                    help="Incident impact level (Critical, High, Medium, Low)",
+                    help="Impact level (Critical, High, Medium, Low)",
+                    width="small"
+                ),
+                "Source": st.column_config.TextColumn(
+                    "Source",
+                    help="Attack source (IP for external, log file for internal)",
+                    width="medium"
+                ),
+                "Target": st.column_config.TextColumn(
+                    "Target",
+                    help="Targeted user, system, or resource",
+                    width="medium"
+                ),
+                "Source Log": st.column_config.TextColumn(
+                    "Source Log",
+                    help="Log file that detected this incident",
+                    width="medium"
+                ),
+                "Details": st.column_config.TextColumn(
+                    "Details",
+                    help="Context-specific incident information",
+                    width="large"
+                ),
+                "Duration": st.column_config.TextColumn(
+                    "Duration",
+                    help="Attack duration",
+                    width="small"
+                ),
+                "Outcome": st.column_config.TextColumn(
+                    "Outcome",
+                    help="Result of the incident (Success/Failure)",
+                    width="small"
+                ),
+                "Status": st.column_config.TextColumn(
+                    "Status",
+                    help="Current incident status",
+                    width="small"
+                ),
+                "Country": st.column_config.TextColumn(
+                    "Country",
+                    help="Geographic origin (for external attacks)",
                     width="small"
                 ),
                 "Risk Level": st.column_config.TextColumn(
@@ -657,14 +959,10 @@ def main_dashboard_view():
                     help="Threat intelligence risk assessment",
                     width="small"
                 ),
-                "Country": st.column_config.TextColumn(
-                    "Country",
-                    help="Geographic origin of the attack",
+                "Rule": st.column_config.TextColumn(
+                    "Rule",
+                    help="Detection rule that triggered this incident",
                     width="medium"
-                ),
-                "Time (UTC)": st.column_config.DatetimeColumn(
-                    "Time (UTC)",
-                    format="YYYY/MM/DD hh:mm:ss"
                 )
             }
         )
@@ -710,9 +1008,9 @@ def main_dashboard_view():
                         st.error(f"❌ Failed to re-activate incident: {result.get('message', 'Unknown error')}")
     
     # Add a section for detailed incident logs
-    if not incident_df.empty and st.toggle("Show Raw Log Details"):
+    if not incident_df.empty and st.toggle("Show Detailed Incident Information"):
         selected_incident_id = st.selectbox(
-            "Select Incident ID for Log Details",
+            "Select Incident ID for Full Details",
             incident_df['ID'].tolist()
         )
         
@@ -721,8 +1019,13 @@ def main_dashboard_view():
             try:
                 raw_incident = session.query(Incident).filter(Incident.id == selected_incident_id).first()
                 if raw_incident:
-                    # Display incident details as a dictionary with all fields
-                    details = {
+                    # Organize details by category
+                    st.subheader(f"Incident #{raw_incident.id} - {raw_incident.type}")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    # Prepare a comprehensive dictionary for PDF generation
+                    details_for_pdf = {
                         "id": raw_incident.id,
                         "ip": raw_incident.ip,
                         "type": raw_incident.type,
@@ -732,33 +1035,111 @@ def main_dashboard_view():
                         "source_log": raw_incident.source_log,
                         "target": raw_incident.target,
                         "status": raw_incident.status,
+                        "target_ip": raw_incident.target_ip,
+                        "outcome": raw_incident.outcome,
+                        "data_compromised_GB": raw_incident.data_compromised_GB,
+                        "attack_duration_min": raw_incident.attack_duration_min,
+                        "security_tools_used": raw_incident.security_tools_used,
+                        "user_role": raw_incident.user_role,
+                        "location": raw_incident.location,
+                        "attack_severity": raw_incident.attack_severity,
+                        "industry": raw_incident.industry,
+                        "response_time_min": raw_incident.response_time_min,
+                        "mitigation_method": raw_incident.mitigation_method,
+                        "geo_country": raw_incident.geo_country,
+                        "geo_country_code": raw_incident.geo_country_code,
+                        "geo_city": raw_incident.geo_city,
+                        "geo_region": raw_incident.geo_region,
+                        "geo_isp": raw_incident.geo_isp,
+                        "geo_org": raw_incident.geo_org,
+                        "threat_risk_level": raw_incident.threat_risk_level,
+                        "threat_risk_score": raw_incident.threat_risk_score,
+                        "abuse_confidence_score": raw_incident.abuse_confidence_score,
+                        "abuse_total_reports": raw_incident.abuse_total_reports,
                     }
+
+                    with col1:
+                        st.markdown("### Core Information")
+                        core_details = {
+                            "ID": raw_incident.id,
+                            "Type": raw_incident.type,
+                            "Severity": raw_incident.severity,
+                            "Status": raw_incident.status,
+                            "Timestamp": str(raw_incident.timestamp),
+                            "Rule": raw_incident.rule,
+                            "Source Log": raw_incident.source_log,
+                        }
+                        for key, value in core_details.items():
+                            if value is not None: # Check for None explicitly
+                                st.text(f"{key}: {value}")
+                        
+                        st.markdown("### Attack Details")
+                        attack_details = {}
+                        if raw_incident.ip:
+                            attack_details["Source IP"] = raw_incident.ip
+                        if raw_incident.target:
+                            attack_details["Target"] = raw_incident.target
+                        if raw_incident.target_ip:
+                            attack_details["Target IP"] = raw_incident.target_ip
+                        if raw_incident.attack_duration_min is not None:
+                            attack_details["Duration"] = f"{raw_incident.attack_duration_min} minutes"
+                        if raw_incident.outcome:
+                            attack_details["Outcome"] = raw_incident.outcome
+                        if raw_incident.security_tools_used:
+                            attack_details["Tools Used"] = raw_incident.security_tools_used
+                        
+                        for key, value in attack_details.items():
+                            if value is not None:
+                                st.text(f"{key}: {value}")
                     
-                    # Add extended fields if available
-                    if raw_incident.target_ip:
-                        details["target_ip"] = raw_incident.target_ip
-                    if raw_incident.outcome:
-                        details["outcome"] = raw_incident.outcome
-                    if raw_incident.data_compromised_GB:
-                        details["data_compromised_GB"] = raw_incident.data_compromised_GB
-                    if raw_incident.attack_duration_min is not None:
-                        details["attack_duration_min"] = raw_incident.attack_duration_min
-                    if raw_incident.security_tools_used:
-                        details["security_tools_used"] = raw_incident.security_tools_used
-                    if raw_incident.user_role:
-                        details["user_role"] = raw_incident.user_role
-                    if raw_incident.location:
-                        details["location"] = raw_incident.location
-                    if raw_incident.attack_severity is not None:
-                        details["attack_severity"] = raw_incident.attack_severity
-                    if raw_incident.industry:
-                        details["industry"] = raw_incident.industry
-                    if raw_incident.response_time_min is not None:
-                        details["response_time_min"] = raw_incident.response_time_min
-                    if raw_incident.mitigation_method:
-                        details["mitigation_method"] = raw_incident.mitigation_method
-                    
-                    st.json(details)
+                    with col2:
+                        # Geographic/Threat Intelligence
+                        if raw_incident.geo_country or raw_incident.threat_risk_level or raw_incident.abuse_confidence_score:
+                            st.markdown("### Threat Intelligence")
+                            threat_details = {}
+                            if raw_incident.geo_country:
+                                threat_details["Country"] = f"{raw_incident.geo_country} ({raw_incident.geo_country_code or 'N/A'})"
+                            if raw_incident.geo_city:
+                                threat_details["City"] = raw_incident.geo_city
+                            if raw_incident.geo_region:
+                                threat_details["Region"] = raw_incident.geo_region
+                            if raw_incident.geo_isp:
+                                threat_details["ISP"] = raw_incident.geo_isp
+                            if raw_incident.geo_org:
+                                threat_details["Organization"] = raw_incident.geo_org
+                            if raw_incident.threat_risk_level:
+                                threat_details["Risk Level"] = raw_incident.threat_risk_level
+                            if raw_incident.threat_risk_score is not None:
+                                threat_details["Risk Score"] = f"{raw_incident.threat_risk_score}/100"
+                            if raw_incident.abuse_confidence_score is not None:
+                                threat_details["Abuse Score"] = f"{raw_incident.abuse_confidence_score}%"
+                            if raw_incident.abuse_total_reports is not None:
+                                threat_details["Total Reports"] = raw_incident.abuse_total_reports
+                            
+                            for key, value in threat_details.items():
+                                if value is not None:
+                                    st.text(f"{key}: {value}")
+                        
+                        # Extended fields
+                        extended_fields = {}
+                        if raw_incident.user_role:
+                            extended_fields["User Role"] = raw_incident.user_role
+                        if raw_incident.location:
+                            extended_fields["Location"] = raw_incident.location
+                        if raw_incident.industry:
+                            extended_fields["Industry"] = raw_incident.industry
+                        if raw_incident.data_compromised_GB is not None:
+                            extended_fields["Data Compromised"] = f"{raw_incident.data_compromised_GB} GB"
+                        if raw_incident.response_time_min is not None:
+                            extended_fields["Response Time"] = f"{raw_incident.response_time_min} minutes"
+                        if raw_incident.mitigation_method:
+                            extended_fields["Mitigation"] = raw_incident.mitigation_method
+                        
+                        if extended_fields:
+                            st.markdown("### Additional Details")
+                            for key, value in extended_fields.items():
+                                if value is not None:
+                                    st.text(f"{key}: {value}")
                     
                     # Report Generation Button
                     st.markdown("---")
