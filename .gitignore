@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+/tmp/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated PDFs and HTML
+*.pdf
+*.html
+
+# Temporary scripts
+cleanup_temp_files.sh
+install_and_generate_pdf.sh
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Reports (keep directory structure but ignore generated files)
+reports/*.pdf
+
+# Environment variables
+.env
+*.env
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Streamlit
+.streamlit/

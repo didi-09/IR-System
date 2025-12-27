@@ -4,9 +4,7 @@
 
 A comprehensive, real-time security incident detection and response system with automated containment, threat intelligence enrichment, and professional dashboard visualization.
 
-[![Status](https://img.shields.io/badge/Status-Production%20Ready-success)]()
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)]()
-[![License](https://img.shields.io/badge/License-Educational-orange)]()
 
 ---
 
@@ -281,18 +279,113 @@ sudo apt install python3-flask python3-sqlalchemy python3-streamlit \
 
 ---
 
-1. **Flask API** on http://127.0.0.1:5000
-2. **Streamlit Dashboard** on http://localhost:8501
-3. **Detection Agent** monitoring system logs
+## 🚀 Quick Start
+
+### Method 1: Unified Launcher (Recommended)
+
+The easiest way to start all components:
+
+```bash
+cd /home/kali/IR-Project/IR-System
+./start_sentinel.sh
+```
+
+This will:
+1. ✅ Start Flask API on http://127.0.0.1:5000
+2. ✅ Start Detection Agent (monitoring real system logs)
+3. ✅ Launch Streamlit Dashboard on http://localhost:8501
+
+**What you'll see:**
+```
+🛡️  Sentinel IR System - Starting
+==========================================
+[1/3] Starting Flask API...
+      ✓ Flask API running (PID: 1234)
+[2/3] Starting Detection Agent...
+      ✓ Detection Agent running (PID: 5678)
+[3/3] Launching Dashboard...
+```
+
+The dashboard will automatically open in your browser at **http://localhost:8501**
+
+> [!NOTE]
+> The detection agent requires **sudo privileges** to monitor system logs and apply containment actions (IP blocking). The script will prompt for your password.
+
+---
+
+### Method 2: Manual Component Startup
+
+Start each component separately for more control:
+
+**Terminal 1 - Flask API:**
+```bash
+cd /home/kali/IR-Project/IR-System
+python3 server_backend/app.py
+```
+
+**Terminal 2 - Detection Agent:**
+```bash
+cd /home/kali/IR-Project/IR-System
+sudo python3 detection_engine/detection_agent.py --multi-source --no-simulation
+```
+
+**Terminal 3 - Dashboard:**
+```bash
+cd /home/kali/IR-Project/IR-System
+streamlit run server_backend/dashboard.py
+```
+
+---
+
+### Verify System is Running
+
+**Check API:**
+```bash
+curl http://127.0.0.1:5000/api/status
+```
+
+**Check Processes:**
+```bash
+ps aux | grep -E "(app.py|detection_agent.py|streamlit)"
+```
+
+**View Logs:**
+```bash
+# API logs
+tail -f /tmp/sentinel_api.log
+
+# Detection agent logs
+tail -f /tmp/sentinel_agent.log
+```
+
+---
 
 ### Access the Dashboard
 
 Open your browser to: **http://localhost:8501**
 
-You'll see three main views:
-- **Dashboard** - Real-time incident monitoring
-- **Real-time Monitor** - Network and traffic analysis
-- **Settings** - Configuration and automation controls
+**Dashboard Views:**
+- **📊 Dashboard** - Real-time incident monitoring, filtering, and management
+- **📡 Real-time Monitor** - Network traffic analysis and live event feed
+- **⚙️ Settings** - Configuration, automation policies, and system controls
+
+---
+
+### Stop the System
+
+If using the unified launcher, press **Ctrl+C** in the terminal.
+
+To stop manually:
+```bash
+# Stop Flask API
+pkill -f "server_backend/app.py"
+
+# Stop Detection Agent
+sudo pkill -f "detection_engine/detection_agent.py"
+
+# Stop Dashboard
+pkill -f "streamlit"
+```
 
 ---
 
@@ -348,6 +441,10 @@ SMTP_TO=security-team@yourdomain.com
 
 ## 🎯 Detection Rules
 
+The system uses **5 detection rules** that monitor authentication events in real-time. Each rule has specific **thresholds** (how many events) and **time windows** (how quickly they occur).
+
+### Detection Rules Table
+
 | Rule | Threshold | Time Window | Severity | Type |
 |------|-----------|-------------|----------|------|
 | **Brute Force** | 3 failed logins | 60 seconds | High | Brute Force |
@@ -356,14 +453,198 @@ SMTP_TO=security-team@yourdomain.com
 | **Off-Hours Login** | Login 10PM-6AM | N/A | Medium | Suspicious Time |
 | **User Enumeration** | 5 invalid users | 2 minutes | Medium | Reconnaissance |
 
-### How Detection Works
+---
 
-1. **Log Monitoring**: Detection agent reads system logs via journalctl
-2. **Event Parsing**: Extracts authentication events (IP, user, timestamp)
-3. **Pattern Matching**: Applies time-window based detection rules
-4. **Incident Creation**: Generates incident with severity classification
-5. **Enrichment**: Adds threat intelligence (GeoIP, abuse score)
-6. **Automated Response**: Executes containment based on policies
+### Rule Explanations
+
+#### 1. Brute Force Attack (High Severity)
+**What it detects:** Someone trying to guess passwords by repeatedly attempting to log in.
+
+**Threshold:** 3 failed login attempts  
+**Time Window:** Within 60 seconds  
+**Example:**
+```
+11:30:00 - Failed password for admin from 1.2.3.4
+11:30:15 - Failed password for admin from 1.2.3.4
+11:30:30 - Failed password for admin from 1.2.3.4
+🚨 ALERT: Brute Force detected!
+```
+
+**Why this matters:** Attackers often try common passwords rapidly. 3 failures in a minute is suspicious.
+
+---
+
+#### 2. Rapid Login Attempts (Critical Severity)
+**What it detects:** Aggressive automated attacks with many login attempts in a short time.
+
+**Threshold:** 10 failed login attempts  
+**Time Window:** Within 30 seconds  
+**Example:**
+```
+11:30:00 - Failed login #1
+11:30:03 - Failed login #2
+...
+11:30:27 - Failed login #10
+🚨 ALERT: Rapid Attempts detected! (Critical)
+```
+
+**Why this matters:** This indicates an automated attack tool (like Hydra or Medusa). Very dangerous.
+
+---
+
+#### 3. Sudo Privilege Escalation (High Severity)
+**What it detects:** Someone trying to gain root/admin privileges using sudo.
+
+**Threshold:** 3 failed sudo attempts  
+**Time Window:** Within 5 minutes  
+**Example:**
+```
+11:30:00 - sudo: authentication failure for user 'hacker'
+11:31:00 - sudo: authentication failure for user 'hacker'
+11:32:00 - sudo: authentication failure for user 'hacker'
+🚨 ALERT: Privilege Escalation Attempt!
+```
+
+**Why this matters:** Attackers who gain regular user access often try to escalate to root. This catches them.
+
+---
+
+#### 4. Off-Hours Login (Medium Severity)
+**What it detects:** Successful logins during unusual hours (10 PM - 6 AM).
+
+**Threshold:** Any successful login  
+**Time Window:** Between 22:00 and 06:00  
+**Example:**
+```
+02:30:00 - Accepted password for admin from 1.2.3.4
+🚨 ALERT: Off-Hours Login (Medium)
+```
+
+**Why this matters:** Legitimate users rarely log in at 2 AM. Could indicate compromised credentials.
+
+---
+
+#### 5. User Enumeration (Medium Severity)
+**What it detects:** Attackers probing to find valid usernames on the system.
+
+**Threshold:** 5 invalid/unknown usernames  
+**Time Window:** Within 2 minutes  
+**Example:**
+```
+11:30:00 - Invalid user admin from 1.2.3.4
+11:30:15 - Invalid user root from 1.2.3.4
+11:30:30 - Invalid user test from 1.2.3.4
+11:30:45 - Invalid user oracle from 1.2.3.4
+11:31:00 - Invalid user postgres from 1.2.3.4
+🚨 ALERT: User Enumeration detected!
+```
+
+**Why this matters:** Before brute forcing, attackers test common usernames. This is reconnaissance.
+
+---
+
+### Detection Metrics Explained
+
+#### What the System Monitors
+
+The detection agent continuously monitors these **data sources**:
+
+1. **System Logs (journalctl)**
+   - SSH authentication attempts (successful and failed)
+   - Sudo authentication attempts
+   - Invalid user attempts
+   - All authentication events in real-time
+
+2. **Network Metrics**
+   - **Ping Latency**: Response time to configured targets (default: 8.8.8.8, 1.1.1.1)
+   - **Traffic Statistics**: Packets per second (in/out), bytes per second
+   - **CPU Load**: System CPU usage correlation with traffic
+
+3. **Threat Intelligence**
+   - **GeoIP**: Country, city, ISP of attacker
+   - **IP Reputation**: Abuse confidence score (0-100)
+   - **Risk Assessment**: Proxy/VPN detection, hosting provider identification
+
+---
+
+#### Key Metrics
+
+**Time-Based Detection:**
+- The system uses **sliding time windows** to detect patterns
+- Events are grouped by source IP and analyzed together
+- Old events automatically expire after the time window
+
+**Example:** For Brute Force (60-second window):
+```
+11:30:00 - Event 1 (stored)
+11:30:20 - Event 2 (stored)
+11:30:40 - Event 3 (stored) → 🚨 ALERT! (3 events in 60s)
+11:31:05 - Event 1 expires (older than 60s)
+```
+
+**Severity Levels:**
+- **Critical**: Immediate threat, automated blocking recommended
+- **High**: Serious threat, requires attention
+- **Medium**: Suspicious activity, monitor closely
+- **Low**: Minor anomaly, informational
+
+**Network DoS Detection:**
+- **Baseline PPS**: System learns normal packet rate (moving average)
+- **Anomaly Score**: Calculated when traffic exceeds baseline by 2-3x
+- **CPU Correlation**: High traffic + high CPU = potential DoS
+- **Score Range**: 0.0 (normal) to 1.0 (definite attack)
+
+---
+
+### How Detection Works (Step-by-Step)
+
+1. **Log Monitoring**  
+   Detection agent reads system logs via `journalctl` in real-time (every 5 seconds)
+
+2. **Event Parsing**  
+   Extracts key information from each log entry:
+   - Source IP address
+   - Target username
+   - Event type (failed login, invalid user, sudo failure)
+   - Timestamp
+
+3. **Pattern Matching**  
+   Applies all 5 detection rules to recent events:
+   - Groups events by source IP
+   - Checks if thresholds are exceeded within time windows
+   - Identifies attack patterns
+
+4. **Incident Creation**  
+   When a rule triggers:
+   - Creates incident with severity classification
+   - Includes all matching events as evidence
+   - Records detection rule that triggered
+
+5. **Threat Intelligence Enrichment**  
+   Automatically adds:
+   - Geographic location (country, city, coordinates)
+   - IP reputation score (if AbuseIPDB configured)
+   - Risk level (Low, Medium, High, Critical)
+   - ISP and organization information
+
+6. **Automated Response**  
+   Based on automation policies:
+   - **Critical/High**: Block IP with iptables, send email alert
+   - **Medium/Low**: Desktop notification only
+   - All actions logged to `automation.log`
+
+7. **Database Storage**  
+   Incident stored with 42 fields including:
+   - Core data (IP, type, severity, timestamp)
+   - Threat intel (country, risk level, abuse score)
+   - SOC data (status, containment actions, analyst notes)
+
+8. **Dashboard Display**  
+   Real-time visualization in Streamlit dashboard:
+   - Incident table with filtering
+   - Charts and analytics
+   - Live network monitoring
+   - Incident management (resolve, close)
 
 ---
 
@@ -721,12 +1002,454 @@ python3 -c "from detection_engine.containment import ContainmentActions; \
 
 ---
 
-## 📈 Performance
-
 - **Detection Latency**: <1 second
 - **Database**: Handles 100K+ incidents
 - **Memory Usage**: ~200 MB (all components)
 - **CPU Usage**: <5% idle, <20% under load
+
+---
+
+## 📸 Screenshots & Sample Output
+
+### Dashboard Main View
+
+The main dashboard provides real-time incident monitoring with advanced filtering and analytics.
+
+![System Overview Dashboard](docs/screenshots/01_system_overview.png)
+
+**Key Features Shown:**
+- Total Incidents: 9 (with 9 Active, 1 Critical)
+- Real-time incident table with auto-refresh (5-second TTL)
+- Severity-based color coding (Critical=Red, High=Orange, Medium=Yellow, Low=Blue)
+- Threat intelligence data (Country, Risk Level, Abuse Score)
+- Advanced filtering (Severity, IP, Target, Timeframe, Status)
+- Export functionality (CSV, JSON)
+- Incident management actions (Resolve, Close, Reactivate)
+- Top Attacker IP tracking
+- Agent status monitoring
+
+---
+
+### Incident Table View
+
+Detailed incident monitoring with comprehensive information for each security event.
+
+![Incident Table](docs/screenshots/02_incident_table.png)
+
+**Incident Details:**
+- Time of detection
+- Incident type (Brute Force, Reconnaissance, Privilege Escalation)
+- Severity level (Critical, High, Medium, Low)
+- Source IP addresses
+- Target accounts
+- Real incidents from actual attacks including Tor exit nodes
+
+---
+
+### Real-Time Monitor View
+
+Live network monitoring and event stream with real-time graphs and SSH event tracking.
+
+![Real-Time Monitor](docs/screenshots/03_realtime_monitor.png)
+
+**Live Event Feed:**
+- Real-time event graph showing activity over time
+- Recent SSH connection attempts (success/failure)
+- Incident alerts with timestamps
+- Network metrics (ping latency, traffic statistics)
+- DoS likelihood scoring
+- Continuous monitoring of authentication events
+
+---
+
+### Settings & Automation Control
+
+Configurable automation policies with per-severity action controls.
+
+![Automation Policies](docs/screenshots/04_automation_policies.png)
+
+**Automation Configuration:**
+- **Critical**: ✅ Block IP, ✅ Send Email, ✅ Desktop Alert
+- **High**: ✅ Block IP, ✅ Send Email, ✅ Desktop Alert
+- **Medium**: ❌ Block IP, ❌ Send Email, ✅ Desktop Alert
+- **Low**: ❌ Block IP, ❌ Send Email, ✅ Desktop Alert
+
+**Automation Statistics:**
+- Total automated actions executed
+- IP blocks applied via iptables
+- Email alerts sent to security team
+- Desktop notifications delivered
+
+---
+
+### Sample Detection Output
+
+**Console Output from Detection Agent:**
+```
+🛡️  Sentinel Detection Agent Started
+📊 Monitoring: journalctl (multi-source mode)
+🔄 Check interval: 5.0 seconds
+⚙️  Automation: ENABLED
+
+[11:30:45] 📝 Parsed 3 new events
+[11:30:45] 🚨 INCIDENT DETECTED!
+           Type: Brute Force
+           IP: 203.0.113.50
+           Target: testuser
+           Severity: High
+           Rule: Failed Login Count Exceeded (3 in 60s)
+
+[11:30:46] 🌍 Threat Intel: United States (Low Risk)
+[11:30:46] 🔒 CONTAINMENT: Blocked IP 203.0.113.50
+[11:30:46] 📧 Email alert sent to security-team@example.com
+[11:30:46] ✅ Incident #1 created and stored
+```
+
+---
+
+### Sample API Response
+
+**GET /api/incidents**
+```json
+[
+  {
+    "id": 1,
+    "ip": "203.0.113.50",
+    "type": "Brute Force",
+    "severity": "High",
+    "target": "testuser",
+    "timestamp": "2025-12-24T11:35:51",
+    "geo_country": "United States",
+    "geo_city": "New York",
+    "threat_risk_level": "Low",
+    "threat_risk_score": 5,
+    "status": "Active",
+    "containment_actions": "IP Blocked",
+    "rule_triggered": "Failed Login Count Exceeded"
+  }
+]
+```
+
+---
+
+### Sample Email Alert
+
+**Subject:** 🚨 Security Alert: High Severity Incident Detected
+
+**Body:**
+```
+SECURITY INCIDENT DETECTED
+
+Severity: High
+Type: Brute Force
+Source IP: 203.0.113.50
+Target: testuser
+Timestamp: 2025-12-24 11:35:51 UTC
+
+Threat Intelligence:
+- Country: United States
+- City: New York
+- Risk Level: Low
+- ISP: Example ISP
+
+Automated Actions Taken:
+✅ IP blocked via iptables
+✅ Desktop notification sent
+✅ Incident logged to database
+
+View in Dashboard: http://localhost:8501
+```
+
+---
+
+### Sample PDF Report
+
+Generated incident reports include:
+- Incident summary with all 42 fields
+- Threat intelligence details
+- Timeline of events
+- Containment actions taken
+- Analyst notes and recommendations
+- System information at time of detection
+
+---
+
+## ⚠️ Limitations
+
+### Current System Limitations
+
+#### 1. Network-Level Attack Detection
+**Limitation:** The system monitors network *metrics* (ping latency, traffic statistics) but does not perform **deep packet inspection**.
+
+**Impact:**
+- ❌ Cannot detect port scanning (nmap, masscan)
+- ❌ Cannot detect ARP spoofing / Man-in-the-Middle attacks
+- ❌ Cannot detect DNS tunneling
+- ❌ Cannot detect protocol-specific exploits
+- ❌ Limited DDoS detection (only traffic anomalies, not packet-level analysis)
+
+**Workaround:** Use external tools like Snort, Suricata, or Zeek for network-level detection, or implement the packet capture module (see Future Improvements).
+
+---
+
+#### 2. Platform Dependency
+**Limitation:** The system is designed for **Linux systems** and relies on `journalctl` for log monitoring.
+
+**Impact:**
+- ❌ Does not work on Windows or macOS without modifications
+- ❌ Requires systemd-based distributions (Ubuntu, Debian, Fedora, RHEL)
+- ❌ Cannot monitor systems without journalctl (older Linux distributions)
+
+**Workaround:** For non-systemd systems, modify `log_parser.py` to read from `/var/log/auth.log` directly.
+
+---
+
+#### 3. Privilege Requirements
+**Limitation:** The detection agent requires **root/sudo privileges** for:
+- Reading system logs (journalctl)
+- Applying containment actions (iptables)
+- Network monitoring (packet statistics)
+
+**Impact:**
+- ⚠️ Security risk if agent is compromised
+- ⚠️ Cannot run in restricted environments
+- ⚠️ Requires careful permission management
+
+**Workaround:** Run in simulation mode for testing, or use fine-grained sudo permissions (sudoers file).
+
+---
+
+#### 4. Single-Node Deployment
+**Limitation:** The system is designed for **single-server deployment** with no distributed architecture.
+
+**Impact:**
+- ❌ Cannot monitor multiple servers from central location
+- ❌ No agent-server architecture
+- ❌ Limited scalability for large environments
+- ❌ No correlation across multiple systems
+
+**Workaround:** Deploy separate instances on each server, or implement centralized log aggregation (syslog forwarding).
+
+---
+
+#### 5. Detection Rule Limitations
+**Limitation:** Detection rules are **hardcoded** and based on predefined patterns.
+
+**Impact:**
+- ❌ No machine learning or behavioral analysis
+- ❌ Cannot detect zero-day attacks
+- ❌ Limited to known attack patterns
+- ❌ No custom rule builder in UI
+- ❌ Thresholds are fixed (not adaptive)
+
+**Workaround:** Modify `detection_rules.py` to add custom rules, or adjust thresholds in code.
+
+---
+
+#### 6. Web Application Security
+**Limitation:** Limited web application attack detection (SQL injection, XSS, etc.).
+
+**Impact:**
+- ⚠️ Only detects web attacks if logged by web server
+- ❌ No real-time HTTP request inspection
+- ❌ No WAF (Web Application Firewall) capabilities
+- ❌ Cannot detect client-side attacks
+
+**Workaround:** Integrate with web server logs (Apache, Nginx) or use dedicated WAF.
+
+---
+
+#### 7. Threat Intelligence Dependency
+**Limitation:** Threat intelligence relies on **external APIs** (ip-api.com, AbuseIPDB).
+
+**Impact:**
+- ⚠️ Requires internet connectivity
+- ⚠️ Subject to API rate limits (45 requests/min for ip-api.com)
+- ⚠️ Private IPs cannot be looked up (assigned "Low" risk by default)
+- ⚠️ AbuseIPDB requires API key for full functionality
+
+**Workaround:** System caches threat intel data for 24 hours to reduce API calls.
+
+---
+
+#### 8. Dashboard Authentication
+**Limitation:** The Streamlit dashboard has **no built-in authentication**.
+
+**Impact:**
+- ⚠️ Anyone with network access can view incidents
+- ⚠️ No role-based access control (RBAC)
+- ⚠️ No audit trail for dashboard actions
+
+**Workaround:** Use firewall rules to restrict access, or deploy behind reverse proxy with authentication.
+
+---
+
+## 🚀 Future Improvements
+
+### Planned Enhancements
+
+#### 1. Packet Capture Module (High Priority)
+**Description:** Implement real-time packet capture using Scapy for network-level attack detection.
+
+**Features:**
+- Deep packet inspection (DPI)
+- Port scan detection (SYN scans, stealth scans)
+- ARP spoofing detection
+- DNS tunneling detection
+- Protocol anomaly detection
+- PCAP file storage for forensics
+
+**Implementation:** See `implementation_plan.md` for detailed design.
+
+---
+
+#### 2. Machine Learning Integration (High Priority)
+**Description:** Add ML-based anomaly detection for identifying unknown threats.
+
+**Features:**
+- Behavioral analysis (user behavior profiling)
+- Anomaly detection (statistical models)
+- Predictive threat scoring
+- Adaptive thresholds (self-tuning detection rules)
+- False positive reduction
+
+**Technologies:** scikit-learn, TensorFlow, or PyTorch
+
+---
+
+#### 3. Multi-Node Architecture (Medium Priority)
+**Description:** Implement agent-server architecture for centralized monitoring.
+
+**Features:**
+- Central management server
+- Lightweight agents on monitored systems
+- Cross-system correlation
+- Centralized dashboard
+- Distributed database (PostgreSQL or MongoDB)
+- Agent health monitoring
+
+---
+
+#### 4. SIEM Integration (Medium Priority)
+**Description:** Add connectors for popular SIEM platforms.
+
+**Integrations:**
+- Splunk (HTTP Event Collector)
+- Elastic Stack (ELK) via Logstash
+- IBM QRadar (Syslog)
+- ArcSight (CEF format)
+- Azure Sentinel (REST API)
+
+**Benefits:** Leverage existing security infrastructure
+
+---
+
+#### 5. Advanced Correlation Engine (Medium Priority)
+**Description:** Implement multi-event correlation for complex attack detection.
+
+**Features:**
+- Attack chain detection (brute force → privilege escalation → data exfiltration)
+- Time-series correlation
+- Geo-velocity detection (impossible travel)
+- Lateral movement detection
+- Kill chain mapping (MITRE ATT&CK)
+
+---
+
+#### 6. Threat Hunting Capabilities (Low Priority)
+**Description:** Add proactive threat hunting features.
+
+**Features:**
+- Historical data search
+- Query builder (SQL-like interface)
+- Threat hypothesis testing
+- IOC (Indicator of Compromise) search
+- Timeline reconstruction
+- Pivot analysis
+
+---
+
+#### 7. Mobile Application (Low Priority)
+**Description:** Develop mobile app for incident management on-the-go.
+
+**Features:**
+- Push notifications for critical incidents
+- Incident review and resolution
+- Dashboard metrics
+- Quick containment actions
+- Analyst notes and comments
+
+**Platforms:** iOS and Android (React Native or Flutter)
+
+---
+
+#### 8. Compliance Reporting (Low Priority)
+**Description:** Add automated compliance report generation.
+
+**Standards:**
+- PCI-DSS (Payment Card Industry)
+- HIPAA (Healthcare)
+- GDPR (Data Protection)
+- SOC 2 (Security Controls)
+- ISO 27001 (Information Security)
+
+**Features:**
+- Automated evidence collection
+- Compliance dashboards
+- Audit trail reports
+- Gap analysis
+
+---
+
+#### 9. Web Application Firewall (WAF) Module (Low Priority)
+**Description:** Add WAF capabilities for web application protection.
+
+**Features:**
+- SQL injection detection
+- XSS (Cross-Site Scripting) prevention
+- CSRF (Cross-Site Request Forgery) protection
+- File upload scanning
+- Rate limiting
+- OWASP Top 10 coverage
+
+---
+
+#### 10. Enhanced Forensics (Low Priority)
+**Description:** Add comprehensive forensic analysis capabilities.
+
+**Features:**
+- Memory forensics (RAM analysis)
+- Disk forensics (file system analysis)
+- Network forensics (PCAP analysis)
+- Evidence chain of custody
+- Timeline reconstruction
+- Malware analysis integration
+
+**Tools:** Volatility, Autopsy, Wireshark integration
+
+---
+
+### Roadmap Priority
+
+**Phase 1 (Next 3 months):**
+1. Packet Capture Module
+2. Machine Learning Integration
+3. Dashboard Authentication
+
+**Phase 2 (3-6 months):**
+4. Multi-Node Architecture
+5. SIEM Integration (Splunk, ELK)
+6. Advanced Correlation Engine
+
+**Phase 3 (6-12 months):**
+7. Threat Hunting Capabilities
+8. Compliance Reporting
+9. Mobile Application
+
+**Phase 4 (Future):**
+10. WAF Module
+11. Enhanced Forensics
+12. Enterprise Features (LDAP, SSO, RBAC)
 
 ---
 
@@ -762,31 +1485,9 @@ python3 -c "from detection_engine.containment import ContainmentActions; \
 
 ---
 
-## 📊 Project Statistics
 
-- **Total Lines of Code**: ~3,500
-- **Detection Rules**: 5
-- **Threat Intel Sources**: 2
-- **Database Fields**: 42
-- **Test Coverage**: 9 test suites
-- **Documentation**: Comprehensive
 
----
 
-## 📝 License
-
-This project is for **educational and security research purposes**.
-
----
-
-## 📞 Support
-
-For issues or questions:
-1. Check the [Troubleshooting](#-troubleshooting) section
-2. Review test scripts in `tests/`
-3. Check system logs in `server_backend/*.log`
-
----
 
 ## 🎉 Acknowledgments
 
@@ -800,8 +1501,7 @@ Built with:
 ---
 
 **Version**: 3.0 (Enterprise Edition with Automation)  
-**Last Updated**: December 2025  
-**Status**: ✅ Production Ready with Configurable Automation
+**Last Updated**: December 2025
 
 ---
 
