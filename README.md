@@ -1577,30 +1577,6 @@ Generated incident reports include:
 
 ---
 
-### Roadmap Priority
-
-**Phase 1 (Next 3 months):**
-1. Packet Capture Module
-2. Machine Learning Integration
-3. Dashboard Authentication
-
-**Phase 2 (3-6 months):**
-4. Multi-Node Architecture
-5. SIEM Integration (Splunk, ELK)
-6. Advanced Correlation Engine
-
-**Phase 3 (6-12 months):**
-7. Threat Hunting Capabilities
-8. Compliance Reporting
-9. Mobile Application
-
-**Phase 4 (Future):**
-10. WAF Module
-11. Enhanced Forensics
-12. Enterprise Features (LDAP, SSO, RBAC)
-
----
-
 ## 🔒 Security Considerations
 
 ### Production Deployment
