@@ -11,3 +11,25 @@
 [2025-12-23 04:36:46] ALERT: Brute Force (Severity: Critical) - Source: 185.220.101.45 - Target: root
 [2025-12-23 04:36:48] ALERT: Privilege Escalation Attempt (Severity: High) - Source: 185.220.101.45 - Target: root
 [2025-12-24 11:36:08] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:12:44] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:12:51] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:24:40] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:24:43] ALERT: Brute Force (Severity: Critical) - Source: 198.51.100.99 - Target: victim
+[2025-12-29 13:27:34] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:27:36] ALERT: Brute Force (Severity: Critical) - Source: 198.51.100.99 - Target: victim
+[2025-12-29 13:27:46] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:27:48] ALERT: Brute Force (Severity: Critical) - Source: 198.51.100.99 - Target: victim
+[2025-12-29 13:30:33] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:30:35] ALERT: Brute Force (Severity: Critical) - Source: 198.51.100.99 - Target: victim
+[2025-12-29 13:30:44] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:30:46] ALERT: Brute Force (Severity: Critical) - Source: 198.51.100.99 - Target: victim
+[2025-12-29 13:30:55] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:30:57] ALERT: Brute Force (Severity: Critical) - Source: 198.51.100.99 - Target: victim
+[2025-12-29 13:31:06] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:31:08] ALERT: Brute Force (Severity: Critical) - Source: 198.51.100.99 - Target: victim
+[2025-12-29 13:31:59] ALERT: Brute Force (Severity: High) - Source: 203.0.113.50 - Target: hacker
+[2025-12-29 13:32:01] ALERT: Brute Force (Severity: Critical) - Source: 198.51.100.99 - Target: victim
+[2025-12-29 14:39:15] ALERT: Brute Force (Severity: High) - Source: 172.25.43.23 - Target: fakeuser
+[2025-12-29 14:39:15] ALERT: Brute Force (Severity: High) - Source: 172.25.43.23 - Target: fakeuser
+[2025-12-29 14:39:24] ALERT: Brute Force (Severity: High) - Source: 172.25.43.23 - Target: fakeuser
+[2025-12-29 14:39:25] ALERT: Brute Force (Severity: High) - Source: 172.25.43.23 - Target: fakeuser

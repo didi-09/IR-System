@@ -207,7 +207,8 @@ class DetectionEngine:
             RapidLoginAttemptsRule(threshold=10, time_window_seconds=30),
             SudoFailureRule(threshold=3, time_window_seconds=300),
             OffHoursLoginRule(start_hour=22, end_hour=6),
-            UserEnumerationRule(threshold=5, time_window_seconds=120)
+            UserEnumerationRule(threshold=5, time_window_seconds=120),
+            PortScanRule(threshold=5, time_window_seconds=30)
         ]
     
     def add_rule(self, rule: DetectionRule):
@@ -249,8 +250,8 @@ class SudoFailureRule(DetectionRule):
     def check(self, events: List[Dict]) -> Optional[Dict]:
         sudo_events = [
             e for e in events 
-            if e.get('type') == 'failed_login' and 
-            (e.get('target', '').lower() in ['root', 'sudo'])
+            if e.get('type') == 'failed_sudo' or 
+            (e.get('type') == 'failed_login' and e.get('target', '').lower() in ['root', 'sudo'])
         ]
         
         if len(sudo_events) < self.threshold:
@@ -388,6 +389,72 @@ class UserEnumerationRule(DetectionRule):
                         'source_log': '/var/log/auth.log',
                         'target': f"{len(unique_users)} different users",
                         'attempt_count': len(window_events)
+                    }
+        
+        return None
+
+class PortScanRule(DetectionRule):
+    """
+    Detects port scanning (Nmap/Masscan) by monitoring firewall dropped packets.
+    Threshold: 5 blocked packets from same IP in 30 seconds.
+    """
+    
+    def __init__(self, threshold: int = 5, time_window_seconds: int = 30):
+        super().__init__(
+            rule_name="Port Scan Detected",
+            incident_type="Reconnaissance",
+            severity="Medium"
+        )
+        self.threshold = threshold
+        self.time_window = timedelta(seconds=time_window_seconds)
+    
+    def check(self, events: List[Dict]) -> Optional[Dict]:
+        """Check for high volume of firewall drops."""
+        drop_events = [
+            e for e in events 
+            if e.get('type') == 'firewall_drop'
+        ]
+        
+        # DEBUG: Print count
+        # if drop_events:
+        #      print(f"🐛 RULE DEBUG: Found {len(drop_events)} firewall drops. Threshold is {self.threshold}")
+
+        if len(drop_events) < self.threshold:
+            return None
+        
+        # Group by IP
+        ip_groups = defaultdict(list)
+        for event in drop_events:
+            ip_groups[event['ip']].append(event)
+        
+        for ip, ip_events in ip_groups.items():
+            if len(ip_events) < self.threshold:
+                continue
+            
+            ip_events.sort(key=lambda x: x['timestamp'])
+            
+            for i in range(len(ip_events) - self.threshold + 1):
+                window_start = ip_events[i]['timestamp']
+                window_end = window_start + self.time_window
+                
+                window_events = [
+                    e for e in ip_events[i:]
+                    if window_start <= e['timestamp'] <= window_end
+                ]
+                
+                if len(window_events) >= self.threshold:
+                    latest_event = max(window_events, key=lambda x: x['timestamp'])
+                    
+                    return {
+                        'ip': ip,
+                        'type': self.incident_type,
+                        'severity': self.severity,
+                        'timestamp': latest_event['timestamp'].isoformat(),
+                        'rule': f"{self.rule_name} (High Packet Drop Rate)",
+                        'source_log': '/var/log/kern.log',
+                        'target': latest_event.get('target', 'server'),
+                        'attempt_count': len(window_events),
+                        'details': f"Firewall dropped {len(window_events)} packets in 30s"
                     }
         
         return None

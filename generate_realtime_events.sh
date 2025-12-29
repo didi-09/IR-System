@@ -56,7 +56,7 @@ echo "       → Should trigger: User Enumeration (Medium severity)"
 sleep 2
 
 echo ""
-echo "[4/5] Generating rapid login attempts (critical)..."
+echo "[4/6] Generating rapid login attempts (critical)..."
 for i in {1..10}; do
     logger -t sshd "Failed password for victim from 198.51.100.99 port 22 ssh2"
     sleep 0.1
@@ -67,7 +67,18 @@ echo "       → Should trigger: Rapid Login Attempts (Critical severity)"
 sleep 2
 
 echo ""
-echo "[5/5] Testing web server logs (if Apache is running)..."
+echo "[5/6] Generating Nmap Port Scan (UFW Blocks)..."
+for i in {1..25}; do
+    logger -t kernel "[1234.56] [UFW BLOCK] IN=eth0 OUT= MAC=00:00 SRC=45.33.32.156 DST=192.168.1.10 PROTO=TCP SPT=4444 DPT=$i"
+    sleep 0.05
+done
+echo "       ✓ Sent 25 firewall block events from 45.33.32.156"
+echo "       → Should trigger: Port Scan Detected (Medium severity)"
+
+sleep 2
+
+echo ""
+echo "[6/6] Testing web server logs (if Apache is running)..."
 if systemctl is-active --quiet apache2; then
     curl -s http://localhost/ > /dev/null 2>&1
     curl -s "http://localhost/search?id=1' OR '1'='1" > /dev/null 2>&1
@@ -89,7 +100,8 @@ echo "  1. Brute Force from 203.0.113.50 (High)"
 echo "  2. Multiple Sudo Failures from 192.168.100.50 (High)"
 echo "  3. User Enumeration from 10.20.30.40 (Medium)"
 echo "  4. Rapid Login Attempts from 198.51.100.99 (Critical)"
-echo "  5. SQL Injection + XSS from web logs (if Apache running)"
+echo "  5. Port Scan Detected from 45.33.32.156 (Medium)"
+echo "  6. SQL Injection + XSS from web logs (if Apache running)"
 echo ""
 echo "To verify events reached journald:"
 echo "  journalctl -t sshd -t sudo --since '1 minute ago' --no-pager"

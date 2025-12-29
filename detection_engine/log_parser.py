@@ -101,6 +101,15 @@ class AuthLogParser(BaseLogParser):
         r'(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}).*?sshd.*?Invalid user (\S+) from ([\d.]+)'
     )
     
+    INVALID_USER_PATTERN = re.compile(
+        r'(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}).*?sshd.*?Invalid user (\S+) from ([\d.]+)'
+    )
+    
+    # Sudo failure pattern
+    SUDO_FAILED_PATTERN = re.compile(
+        r'(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}).*?sudo.*?authentication failure.*?user=(\S+).*?from\s+([\d.]+)'
+    )
+    
     PROCESS_PATTERN = re.compile(r'\[pid\s+(\d+)\]')
     
     def __init__(self, log_file_path: str = "/var/log/auth.log"):
@@ -234,6 +243,30 @@ class AuthLogParser(BaseLogParser):
             'raw_line': log_line.strip()
         }
     
+    def parse_sudo_failed(self, log_line: str) -> Optional[Dict]:
+        """
+        Parse a sudo authentication failure.
+        """
+        match = self.SUDO_FAILED_PATTERN.search(log_line)
+        if not match:
+            return None
+        
+        timestamp_str, username, ip_address = match.groups()
+        timestamp = self.parse_timestamp(timestamp_str)
+        pid = self.extract_pid(log_line)
+        
+        if not timestamp:
+            return None
+        
+        return {
+            'timestamp': timestamp,
+            'ip': ip_address,
+            'target': username,
+            'type': 'failed_sudo',
+            'pid': pid,
+            'raw_line': log_line.strip()
+        }
+
     def read_new_lines(self, last_position: int = 0) -> tuple[List[str], int]:
         """
         Read new lines from the log file since last_position.
@@ -280,6 +313,10 @@ class AuthLogParser(BaseLogParser):
         if parsed:
             return parsed
         
+        parsed = self.parse_sudo_failed(log_line)
+        if parsed:
+            return parsed
+        
         return None
 
 
@@ -321,7 +358,7 @@ class SyslogParser(BaseLogParser):
             if timestamp:
                 return {
                     'timestamp': timestamp,
-                    'event_type': 'service_start',
+                    'type': 'service_start',
                     'service': service,
                     'severity': 'Low',
                     'category': 'system',
@@ -336,7 +373,7 @@ class SyslogParser(BaseLogParser):
             if timestamp:
                 return {
                     'timestamp': timestamp,
-                    'event_type': 'service_stop',
+                    'type': 'service_stop',
                     'service': service,
                     'severity': 'Low',
                     'category': 'system',
@@ -351,7 +388,7 @@ class SyslogParser(BaseLogParser):
             if timestamp:
                 return {
                     'timestamp': timestamp,
-                    'event_type': 'service_failed',
+                    'type': 'service_failed',
                     'service': service,
                     'severity': 'High',
                     'category': 'system',
@@ -366,7 +403,7 @@ class SyslogParser(BaseLogParser):
             if timestamp:
                 return {
                     'timestamp': timestamp,
-                    'event_type': 'cron_job',
+                    'type': 'cron_job',
                     'user': user,
                     'command': command,
                     'pid': pid,
@@ -397,8 +434,70 @@ class KernelLogParser(BaseLogParser):
         r'(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}).*?kernel:.*?Out of memory.*?Kill process (\d+)'
     )
     
+    # Firewall Block Patterns (UFW/IPTables)
+    # Updated to match both file format and journalctl format
+    # journalctl format: "Dec 29 14:09:02 kali kernel: [UFW BLOCK] IN=wlan0..."
+    # file format: "Dec 29 14:09:02 hostname kernel: [12345.678] [UFW BLOCK] IN=wlan0..."
+    FIREWALL_BLOCK_PATTERN = re.compile(
+        r'(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}).*?kernel:\s*(?:\[[\d.]+\\]\s*)?\[((?:UFW|IPTables) BLOCK)\].*?SRC=([\d.]+).*?DST=([\d.]+).*?PROTO=(\w+)'
+    )
+    
     def __init__(self, log_file_path: str = "/var/log/kern.log"):
-        super().__init__(log_file_path)
+        self.log_file_path = log_file_path
+        self.current_year = datetime.now().year
+        self.use_journal = False
+        self.process = None
+        
+        if not os.path.exists(log_file_path):
+            print(f"⚠️  {log_file_path} not found. Switching to journalctl -k monitoring.")
+            self.use_journal = True
+            # Use -n 0 to only monitor NEW logs (avoid re-processing old events on restart)
+            self.cmd = ['journalctl', '-k', '-f', '-n', '0', '--no-pager']
+            self._start_process()
+        else:
+            super().__init__(log_file_path)
+
+    def _start_process(self):
+        """Start the journalctl process."""
+        try:
+            self.process = subprocess.Popen(
+                self.cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+        except Exception as e:
+            print(f"❌ Failed to start journalctl: {e}")
+            self.process = None
+
+    def read_new_lines(self, last_position: int = 0) -> Tuple[List[str], int]:
+        if self.use_journal:
+             if not self.process: return [], 0
+             
+             lines = []
+             # Non-blocking read
+             while True:
+                 ready, _, _ = select.select([self.process.stdout], [], [], 0.01)
+                 if ready:
+                     line = self.process.stdout.readline()
+                     if line:
+                         lines.append(line)
+                     else:
+                         break # EOF
+                 else:
+                     break
+             
+             # if lines:
+             #     print(f"🐛 DEBUG KERNEL: Read {len(lines)} lines from journal. First line samples:")
+             #     for l in lines[:3]:
+             #         print(f"   RAW: {l.strip()}")
+             # else:
+                 # print("🐛 DEBUG KERNEL: No lines ready in journal subprocess.")
+                 
+             return lines, 0
+        else:
+            return super().read_new_lines(last_position)
     
     def parse_log_line(self, log_line: str) -> Optional[Dict]:
         """
@@ -414,11 +513,11 @@ class KernelLogParser(BaseLogParser):
         match = self.OOM_KILLER_PATTERN.search(log_line)
         if match:
             timestamp_str, pid = match.groups()
-            timestamp = self.parse_timestamp(timestamp_str)
+            timestamp = self.parse_timestamp(timestamp_str, fmt="%b %d %H:%M:%S")
             if timestamp:
                 return {
                     'timestamp': timestamp,
-                    'event_type': 'oom_killer',
+                    'type': 'oom_killer',
                     'pid': pid,
                     'severity': 'Critical',
                     'category': 'kernel',
@@ -426,14 +525,13 @@ class KernelLogParser(BaseLogParser):
                 }
         
         # Try USB device
-        match = self.USB_DEVICE_PATTERN.search(log_line)
         if match:
             timestamp_str, vendor_id, product_id = match.groups()
-            timestamp = self.parse_timestamp(timestamp_str)
+            timestamp = self.parse_timestamp(timestamp_str, fmt="%b %d %H:%M:%S")
             if timestamp:
                 return {
                     'timestamp': timestamp,
-                    'event_type': 'usb_device',
+                    'type': 'usb_device',
                     'vendor_id': vendor_id,
                     'product_id': product_id,
                     'severity': 'Medium',
@@ -441,15 +539,40 @@ class KernelLogParser(BaseLogParser):
                     'raw_line': log_line.strip()
                 }
         
+        # Try Firewall Block
+        
+        # DEBUG: Check if we even see the block
+        # if "UFW BLOCK" in log_line or "IPTables BLOCK" in log_line:
+        #     print(f"👀 SEEN BLOCK LINE: {log_line.strip()[:80]}...") 
+            # pass
+
+        match = self.FIREWALL_BLOCK_PATTERN.search(log_line)
+        if match:
+            # print(f"✅ REGEX MATCHED! Groups: {match.groups()}")
+            timestamp_str, block_type, src_ip, dst_ip, proto = match.groups()
+            # Call parse_timestamp without fmt parameter to let base class add the year
+            timestamp = self.parse_timestamp(timestamp_str, fmt="%b %d %H:%M:%S")
+            if timestamp:
+                return {
+                    'timestamp': timestamp,
+                    'type': 'firewall_drop',
+                    'ip': src_ip,
+                    'target': dst_ip,
+                    'protocol': proto,
+                    'severity': 'Low', # Individual drops are low, but high count = Scan
+                    'category': 'network',
+                    'raw_line': log_line.strip()
+                }
+        
         # Try kernel error
         match = self.KERNEL_ERROR_PATTERN.search(log_line)
         if match:
             timestamp_str, message = match.groups()
-            timestamp = self.parse_timestamp(timestamp_str)
+            timestamp = self.parse_timestamp(timestamp_str, fmt="%b %d %H:%M:%S")
             if timestamp:
                 return {
                     'timestamp': timestamp,
-                    'event_type': 'kernel_error',
+                    'type': 'kernel_error',
                     'message': message.strip(),
                     'severity': 'High',
                     'category': 'kernel',
@@ -460,11 +583,11 @@ class KernelLogParser(BaseLogParser):
         match = self.KERNEL_WARNING_PATTERN.search(log_line)
         if match:
             timestamp_str, message = match.groups()
-            timestamp = self.parse_timestamp(timestamp_str)
+            timestamp = self.parse_timestamp(timestamp_str, fmt="%b %d %H:%M:%S")
             if timestamp:
                 return {
                     'timestamp': timestamp,
-                    'event_type': 'kernel_warning',
+                    'type': 'kernel_warning',
                     'message': message.strip(),
                     'severity': 'Medium',
                     'category': 'kernel',
@@ -549,7 +672,7 @@ class WebServerLogParser(BaseLogParser):
         result = {
             'timestamp': timestamp,
             'ip': ip,
-            'event_type': attack_type or 'web_access',
+            'type': attack_type or 'web_access',
             'method': method,
             'uri': uri,
             'status': status,
@@ -590,7 +713,7 @@ class WebServerLogParser(BaseLogParser):
         return {
             'timestamp': timestamp,
             'ip': client_ip or 'unknown',
-            'event_type': 'web_error',
+            'type': 'web_error',
             'error_level': level,
             'severity': severity_map.get(level.lower(), 'Medium'),
             'category': 'web',
@@ -667,7 +790,7 @@ class DatabaseLogParser(BaseLogParser):
             
             return {
                 'timestamp': timestamp,
-                'event_type': 'db_auth_failed',
+                'type': 'db_auth_failed',
                 'user': user,
                 'ip': host,
                 'severity': 'High',
@@ -686,7 +809,7 @@ class DatabaseLogParser(BaseLogParser):
             
             return {
                 'timestamp': timestamp,
-                'event_type': 'db_error',
+                'type': 'db_error',
                 'message': message.strip(),
                 'severity': 'Medium',
                 'category': 'database',

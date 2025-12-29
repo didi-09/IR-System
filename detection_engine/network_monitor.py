@@ -48,15 +48,27 @@ class PingMonitor(threading.Thread):
         
         # Load targets from config if available
         self.config_manager = ConfigManager() if ConfigManager else None
+        self.default_targets = targets if targets else ["8.8.8.8", "1.1.1.1"]
+        
+        # Initial load
+        self.targets = self._load_targets()
+
+    def _load_targets(self):
+        """Load targets from config, with fallback to defaults."""
         if self.config_manager:
-            self.targets = self.config_manager.get("ping_targets", ["8.8.8.8", "1.1.1.1"])
-        else:
-            self.targets = targets if targets else ["8.8.8.8", "1.1.1.1"]
+            return self.config_manager.get("ping_targets", self.default_targets)
+        return self.default_targets
 
     def run(self):
         print(f"🔄 PingMonitor started for targets: {self.targets}")
         self.running = True
         while self.running:
+            # Reload targets from config on each iteration (allows dynamic updates)
+            new_targets = self._load_targets()
+            if new_targets != self.targets:
+                print(f"🔄 PingMonitor: Updated targets from {self.targets} to {new_targets}")
+                self.targets = new_targets
+            
             for target in self.targets:
                 self.ping_target(target)
             time.sleep(self.interval)

@@ -207,7 +207,15 @@ def resolve_incident_api(incident_id, status="Resolved"):
 def get_ping_stats(limit=100):
     session = Session()
     try:
-        metrics = session.query(PingMetrics).order_by(PingMetrics.timestamp.desc()).limit(limit).all()
+        # Get current configured targets
+        config_mgr = ConfigManager()
+        current_targets = config_mgr.get('ping_targets', [])
+        
+        # Only fetch metrics for current targets
+        metrics = session.query(PingMetrics).filter(
+            PingMetrics.target_ip.in_(current_targets)
+        ).order_by(PingMetrics.timestamp.desc()).limit(limit).all()
+        
         return [
             {
                 "Target": m.target_ip,
@@ -1168,56 +1176,66 @@ def main_dashboard_view():
 def realtime_monitor_view():
     st.title("⚡ Real-time Network Monitor")
     
-    # Auto-refresh
-    # Auto-refresh mechanism - DISABLED due to causing crashes
-    # if st.sidebar.checkbox("Enable Auto-refresh", value=False):
-    #     st.rerun()
+    # Auto-refresh controls in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔄 Auto-Refresh")
+    auto_refresh = st.sidebar.checkbox("Enable Auto-refresh", value=True, help="Automatically refresh charts and data")
     
-    if st.sidebar.button("🔄 Refresh Data"):
+    if auto_refresh:
+        refresh_interval = st.sidebar.slider("Refresh Interval (seconds)", min_value=2, max_value=30, value=5, step=1)
+        st.sidebar.success(f"✅ Auto-refresh: Every {refresh_interval}s")
+    else:
+        refresh_interval = None
+        st.sidebar.info("ℹ️ Auto-refresh disabled")
+    
+    # Manual refresh button
+    if st.sidebar.button("🔄 Refresh Now"):
         st.rerun()
-
-    # --- Section 1: Network Traffic & DoS ---
-    st.subheader("📡 Network Traffic & DoS Analysis")
-    traffic_stats = get_traffic_stats()
-    if traffic_stats:
-        df_traffic = pd.DataFrame(traffic_stats)
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.area_chart(df_traffic, x="Time", y=["PPS In", "PPS Out"])
-        
-        with col2:
-            latest = df_traffic.iloc[0]
-            dos_score = latest['DoS Score']
-            st.metric("DoS Likelihood", f"{int(dos_score * 100)}%", delta=None)
+    
+    # Create auto-updating fragments for each section
+    @st.fragment(run_every=refresh_interval if auto_refresh else None)
+    def traffic_section():
+        st.subheader("📡 Network Traffic & DoS Analysis")
+        traffic_stats = get_traffic_stats()
+        if traffic_stats:
+            df_traffic = pd.DataFrame(traffic_stats)
             
-            if dos_score > 0.7:
-                st.error("Likelihood: CRITICAL")
-            elif dos_score > 0.3:
-                st.warning("Likelihood: SUSPICIOUS")
-            else:
-                st.success("Likelihood: LOW")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.area_chart(df_traffic, x="Time", y=["PPS In", "PPS Out"])
+            
+            with col2:
+                latest = df_traffic.iloc[0]
+                dos_score = latest['DoS Score']
+                st.metric("DoS Likelihood", f"{int(dos_score * 100)}%", delta=None)
                 
-            st.metric("Current CPU", f"{latest['CPU %']}%")
-
-    # --- Section 2: Ping Latency ---
-    st.subheader("📶 Target Latency (Ping Streams)")
-    ping_data = get_ping_stats()
-    if ping_data:
-        df_ping = pd.DataFrame(ping_data)
-        # Reshape for multi-line chart (pivot)
-        # We need a line for each target
-        if not df_ping.empty:
-            st.line_chart(df_ping, x="Time", y="Latency (ms)", color="Target")
-
-    # --- Section 3: Live Feeds (Incidents & SSH) ---
-    st.subheader("🚨 Live Event Feed")
+                if dos_score > 0.7:
+                    st.error("Likelihood: CRITICAL")
+                elif dos_score > 0.3:
+                    st.warning("Likelihood: SUSPICIOUS")
+                else:
+                    st.success("Likelihood: LOW")
+                    
+                st.metric("Current CPU", f"{latest['CPU %']}%")
+        else:
+            st.info("No traffic data available")
     
-    col_inc, col_ssh = st.columns(2)
+    @st.fragment(run_every=refresh_interval if auto_refresh else None)
+    def ping_section():
+        st.subheader("📶 Target Latency (Ping Streams)")
+        ping_data = get_ping_stats()
+        if ping_data:
+            df_ping = pd.DataFrame(ping_data)
+            if not df_ping.empty:
+                st.line_chart(df_ping, x="Time", y="Latency (ms)", color="Target")
+        else:
+            st.info("No ping data available")
     
-    with col_inc:
+    @st.fragment(run_every=refresh_interval if auto_refresh else None)
+    def incidents_section():
+        st.subheader("🚨 Live Incident Feed")
         st.write("**Latest Incidents**")
-        latest_incidents = get_latest_incidents()
+        latest_incidents = get_latest_incidents(limit=20)
         if latest_incidents:
             df_inc = pd.DataFrame(latest_incidents)
             st.dataframe(
@@ -1225,32 +1243,16 @@ def realtime_monitor_view():
                 column_config={
                     "Time": st.column_config.DatetimeColumn(format="HH:mm:ss"),
                 },
-                width='stretch',
+                use_container_width=True,
                 hide_index=True
             )
         else:
             st.info("No recent incidents.")
-
-    with col_ssh:
-        st.write("**Recent SSH Data**")
-        ssh_events = get_latest_ssh_events()
-        if ssh_events:
-            df_ssh = pd.DataFrame(ssh_events)
-            
-            def highlight_type(val):
-                color = 'green' if val == 'SUCCESS' else 'red'
-                return f'color: {color}'
-
-            st.dataframe(
-                df_ssh.style.map(highlight_type, subset=['Type']),
-                column_config={
-                    "Time": st.column_config.DatetimeColumn(format="HH:mm:ss"),
-                },
-                width='stretch',
-                hide_index=True
-            )
-        else:
-            st.info("No recent SSH events.")
+    
+    # Render all sections
+    traffic_section()
+    ping_section()
+    incidents_section()
 
 # --- App Entry Point ---
 

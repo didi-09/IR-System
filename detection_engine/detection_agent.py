@@ -112,6 +112,25 @@ class DetectionAgent:
                     import traceback
                     traceback.print_exc()
             
+            # FORCE ADD KERNEL SOURCE (for Nmap detection via UFW logs)
+            # Even if kern.log is missing, KernelLogParser now handles journalctl -k fallback
+            try:
+                from log_source_manager import LogSource
+                from log_parser import KernelLogParser
+                
+                # Check if kernel source already added by discovery? No, we do this before discovery
+                # We add it with a dummy path if file missing to trigger the Parser's fallback
+                kern_log = "/var/log/kern.log"
+                if not os.path.exists(kern_log):
+                    print("🔄 Force-adding kernel source using journalctl -k fallback...")
+                    # We pass the missing path, KernelLogParser.__init__ will see it's missing and switch to journal
+                    kernel_source = LogSource('kernel', kern_log, KernelLogParser, priority=1)
+                    if kernel_source.enabled:
+                        self.log_source_manager.log_sources.append(kernel_source)
+                        print("✅ Added kernel source (journald fallback)")
+            except Exception as e:
+                print(f"❌ Failed to add kernel source: {e}")
+
             # Discover other log sources
             self.log_source_manager.discover_and_add_sources()
             self.log_parser = None  # Not used in multi-source mode
@@ -187,6 +206,9 @@ class DetectionAgent:
             True if successful, False otherwise
         """
         try:
+            # DEBUG: Print payload
+            print(f"📤 Payload sending to API: {incident}")
+
             response = requests.post(
                 self.api_url,
                 json=incident,
@@ -206,7 +228,7 @@ class DetectionAgent:
             print("   Ensure Flask backend (app.py) is running!")
             return False
         except Exception as e:
-            print(f"❌ Error sending alert: {e}")
+            print(f"❌ Error sending alert to {self.api_url}: {e}")
             return False
     
     def process_events(self, events: List[Dict]) -> List[Dict]:
@@ -391,6 +413,10 @@ class DetectionAgent:
             return
         
         print(f"📊 Parsed {len(new_events)} new events from {len(set(e.get('log_source', 'auth') for e in new_events))} sources")
+        
+        # DEBUG: Print event types
+        event_types = [e.get('type') for e in new_events]
+        print(f"🔎 DEBUG Event Types: {set(event_types)}")
         
         # Process events and detect incidents
         incidents = self.process_events(new_events)

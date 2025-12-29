@@ -6,7 +6,7 @@ import threading
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config.json')
 
 DEFAULT_CONFIG = {
-    "ping_targets": ["8.8.8.8", "1.1.1.1"],
+    "ping_targets": ["192.168.1.1", "172.25.47.1", "172.25.43.1"],
     "dos_thresholds": {
         "cpu_percent": 80.0,
         "pps_in": 1000,

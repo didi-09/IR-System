@@ -29,6 +29,31 @@ A comprehensive, real-time security incident detection and response system with 
 - [Security Considerations](#-security-considerations)
 - [Contributing](#-contributing)
 
+
+---
+
+## 🆕 Recent Improvements (December 2025)
+
+### ✅ Nmap/Port Scan Detection
+- **Fixed:** Timestamp parsing for `journalctl -k` firewall logs
+- **Added:** Dynamic firewall log monitoring (no historical re-processing on restart)
+- **Status:** Port scans now correctly detected via UFW/IPTables blocks
+
+### 🔄 Real-time Dashboard Updates
+- **Added:** Fragment-based auto-refresh (charts/tables update independently)
+- **Improved:** No page flickering, sidebar controls remain stable
+- **Configurable:** 2-30 second refresh intervals
+
+### 📶 Network Monitoring Enhancements
+- **Fixed:** Ping targets now update dynamically (5-second detection)
+- **Improved:** Dashboard filters out old/stale ping targets automatically
+- **Changed:** Default targets from public DNS to local gateways (192.168.1.1, 172.25.47.1)
+
+### 🧹 Code Cleanup
+- **Removed:** SSH data section from Real-time Monitor (simplified UI)
+- **Deleted:** Temporary test files and debug scripts
+- **Updated:** Comprehensive documentation with log sources
+
 ---
 
 ## 🌟 Overview
@@ -52,6 +77,7 @@ Sentinel is a **fully automated** Security Operations Center (SOC) platform desi
 | Feature | Description | Status |
 |---------|-------------|--------|
 | **5 Detection Rules** | Brute force, rapid attempts, sudo failures, off-hours login, user enumeration | ✅ |
+| **Port Scan Detection** | Detects Nmap/Masscan via firewall logs (UFW/IPTables) | ✅ |
 | **Real-Time Monitoring** | Continuous log analysis via journalctl | ✅ |
 | **Multi-Source Support** | SSH, sudo, system logs | ✅ |
 | **Pattern Recognition** | Time-window based attack detection | ✅ |
@@ -452,6 +478,7 @@ The system uses **5 detection rules** that monitor authentication events in real
 | **Sudo Failures** | 3 sudo failures | 5 minutes | High | Privilege Escalation |
 | **Off-Hours Login** | Login 10PM-6AM | N/A | Medium | Suspicious Time |
 | **User Enumeration** | 5 invalid users | 2 minutes | Medium | Reconnaissance |
+| **Port Scan** | 5 firewall blocks | 30 seconds | Medium | Reconnaissance |
 
 ---
 
@@ -543,27 +570,113 @@ The system uses **5 detection rules** that monitor authentication events in real
 
 ---
 
+#### 6. Port Scan Detection (Medium Severity)
+**What it detects:** Attackers using Nmap or Masscan to find open ports.
+
+**Threshold:** 5 firewall blocks (UFW/IPTables)  
+**Time Window:** Within 30 seconds  
+**Example:**
+```
+11:30:00 - [UFW BLOCK] SRC=45.33.32.156 DST=192.168.1.10 DPT=4444
+...
+11:30:05 - [UFW BLOCK] SRC=45.33.32.156 DST=192.168.1.10 DPT=4445
+🚨 ALERT: Port Scan Detected! (High Packet Drop Rate)
+```
+
+**Why this matters:** Detects reconnaissance activity before a specific service is targeted.
+
+---
+
 ### Detection Metrics Explained
 
 #### What the System Monitors
 
 The detection agent continuously monitors these **data sources**:
 
-1. **System Logs (journalctl)**
-   - SSH authentication attempts (successful and failed)
-   - Sudo authentication attempts
-   - Invalid user attempts
-   - All authentication events in real-time
+##### 1. **System Authentication Logs (Primary Source)**
 
-2. **Network Metrics**
-   - **Ping Latency**: Response time to configured targets (default: 8.8.8.8, 1.1.1.1)
-   - **Traffic Statistics**: Packets per second (in/out), bytes per second
-   - **CPU Load**: System CPU usage correlation with traffic
+The system uses **systemd-journald** (`journalctl`) as the primary log source for real-time monitoring:
 
-3. **Threat Intelligence**
-   - **GeoIP**: Country, city, ISP of attacker
-   - **IP Reputation**: Abuse confidence score (0-100)
-   - **Risk Assessment**: Proxy/VPN detection, hosting provider identification
+| Log Source | Command | What It Monitors | Fallback |
+|------------|---------|------------------|----------|
+| **Auth Logs** | `journalctl -f -n 0` | SSH logins, sudo attempts, authentication events | `/var/log/auth.log` |
+| **Kernel Logs** | `journalctl -k -f -n 0` | Firewall blocks (UFW/IPTables), kernel events | `/var/log/kern.log` |
+
+**Why journalctl?**
+- ✅ Real-time streaming (no file polling)
+- ✅ Works on systems without traditional log files
+- ✅ Automatic log rotation handling
+- ✅ Structured data with metadata
+- ✅ No permission issues with log file access
+
+**Monitored Events:**
+- ✅ SSH authentication attempts (successful and failed)
+- ✅ Sudo authentication attempts and failures
+- ✅ Invalid/unknown user login attempts
+- ✅ Firewall packet drops (UFW BLOCK, IPTables DROP)
+- ✅ Kernel security events
+- ✅ Session opens/closes
+
+##### 2. **Application & Service Logs** (Auto-Discovery)
+
+The system automatically discovers and monitors application logs via `log_discovery.py`:
+
+**Web Servers:**
+- Apache: `/var/log/apache2/access.log`, `/var/log/apache2/error.log`
+- Nginx: `/var/log/nginx/access.log`, `/var/log/nginx/error.log`
+
+**Databases:**
+- PostgreSQL: `/var/log/postgresql/postgresql-*.log`
+- MySQL/MariaDB: `/var/log/mysql/error.log`, `/var/log/mysql/mysql.log`
+
+**System Logs:**
+- Package Management: `/var/log/dpkg.log`, `/var/log/apt/history.log`
+- System Events: `/var/log/syslog`, `/var/log/messages`
+- Authentication: `/var/log/auth.log` (if available)
+- Kernel: `/var/log/kern.log` (if available)
+
+> **Note:** Log discovery runs automatically on startup. Only readable log files are monitored.
+
+##### 3. **Network Metrics** (Real-Time Monitoring)
+
+**Ping Latency Monitoring:**
+- **Default Targets:** Gateway IPs (192.168.1.1, 172.25.47.1, 172.25.43.1)
+- **Configurable:** Via Dashboard → Settings → Network Monitoring Config
+- **Dynamic Updates:** Changes apply within 5 seconds (no restart needed)
+- **Metrics:** Latency (ms), packet loss, up/down status
+- **Frequency:** Every 5 seconds per target
+
+**Traffic Statistics:**
+- **Packets per second** (in/out)
+- **Bytes per second** (in/out)
+- **CPU load correlation**
+- **DoS likelihood score** (0.0-1.0)
+
+**DoS Detection Algorithm:**
+- Baseline PPS learning (moving average)
+- Anomaly detection (traffic spikes > 2-3x baseline)
+- CPU correlation (high traffic + high CPU = potential DoS)
+- Configurable thresholds via `config.json`
+
+##### 4. **Threat Intelligence** (Automatic Enrichment)
+
+**GeoIP Data (ip-api.com):**
+- Country, city, region, coordinates
+- ISP and organization
+- Proxy/VPN detection
+- Timezone and currency
+
+**IP Reputation (AbuseIPDB - Optional):
+- Abuse confidence score (0-100)
+- Total abuse reports
+- Last reported date
+- Usage type (hosting, residential, etc.)
+
+**Risk Assessment:**
+- Automatic risk level calculation (Low/Medium/High/Critical)
+- Private IP detection (192.168.x.x, 10.x.x.x → Low risk)
+- Hosting provider flagging
+- Proxy/VPN identification
 
 ---
 
@@ -766,11 +879,44 @@ Incidents are automatically scored based on:
 
 ### Real-time Monitor View
 
+**Overview:**
+The Real-time Monitor provides live visualization of network activity, system metrics, and security events with automatic updates.
+
 **Features:**
-- Network traffic & DoS analysis
-- Ping latency monitoring
-- Live incident feed
-- SSH event stream
+
+**🔄 Auto-Refresh (Fragment-Based)**
+- **Isolated Updates:** Only charts and tables refresh, not the entire page
+- **No Flickering:** Sidebar controls remain stable during updates
+- **Configurable Interval:** 2-30 seconds (default: 5 seconds)
+- **Toggle Control:** Enable/disable anytime via sidebar
+- **Manual Refresh:** "Refresh Now" button for on-demand updates
+
+**📡 Network Traffic & DoS Analysis**
+- Real-time area chart (Packets In/Out)
+- DoS likelihood score with color-coded alerts:
+  - 🟢 Low (0-30%): Normal traffic
+  - 🟡 Suspicious (30-70%): Elevated activity
+  - 🔴 Critical (70-100%): Potential DoS attack
+- Current CPU load metric
+- Auto-updates every X seconds (configurable)
+
+**📶 Target Latency (Ping Streams)**
+- Multi-line chart showing latency for each configured target
+- **Dynamic Target Updates:** Changes in Settings apply within 5 seconds
+- Filters out old/stale targets automatically
+- Color-coded by target IP
+- Shows only currently configured targets
+
+**🚨 Live Incident Feed**
+- Latest 20 incidents in real-time
+- Timestamp, type, severity, target, source IP
+- Auto-scrolling table with formatted timestamps
+- Full-width display (SSH data section removed for clarity)
+
+**Configuration:**
+- Ping targets: Dashboard → Settings → Network Monitoring Config
+- DoS thresholds: Editable in `server_backend/config.json`
+- Refresh interval: Adjustable via sidebar slider (2-30s)
 
 ### Settings View
 
@@ -1180,9 +1326,11 @@ Generated incident reports include:
 
 #### 1. Network-Level Attack Detection
 **Limitation:** The system monitors network *metrics* (ping latency, traffic statistics) but does not perform **deep packet inspection**.
+- **IPv6 Support**: Fully supported for detection and banning
+- **Encrypted Traffic**: Cannot decrypt HTTPS/SSH content (by design)
+- **Containerization**: Requires host networking mode for full visibility
 
 **Impact:**
-- ❌ Cannot detect port scanning (nmap, masscan)
 - ❌ Cannot detect ARP spoofing / Man-in-the-Middle attacks
 - ❌ Cannot detect DNS tunneling
 - ❌ Cannot detect protocol-specific exploits
@@ -1255,7 +1403,7 @@ Generated incident reports include:
 - ❌ No WAF (Web Application Firewall) capabilities
 - ❌ Cannot detect client-side attacks
 
-**Workaround:** Integrate with web server logs (Apache, Nginx) or use dedicated WAF.
+**Workaround:** The system currently monitors standard access/error logs. Use a dedicated WAF for advanced protection.
 
 ---
 
